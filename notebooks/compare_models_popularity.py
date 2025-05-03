@@ -16,7 +16,7 @@ def eval_by_bucket(model, df_eval, N=40):
     df_true = df_eval.select(['cookie','node']).with_columns(pl.lit(1).alias('true'))
     df_pred = preds.with_columns(pl.lit(1).alias('pred'))
     df_merge = df_true.join(df_pred, on=['cookie','node'], how='left').fill_null({'pred': 0})
-    df_merge = df_merge.with_columns(pl.col('node').apply(bucket).alias('bucket'))
+    df_merge = df_merge.with_columns(pl.col('node').map(bucket).alias('bucket'))
     result = {}
     for b in ['high','medium','low']:
         df_b = df_merge.filter(pl.col('bucket') == b)
