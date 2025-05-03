@@ -1,0 +1,9 @@
+torch == 2.5.1
+torchvision == 0.20.1
+pandas
+polars==1.25.2
+matplotlib
+seaborn
+plotly
+jupyter
+scikit-learntorch
