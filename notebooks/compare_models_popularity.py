@@ -11,12 +11,20 @@ df_test_users, df_clickstream, df_cat, df_text, df_events, df_train, df_eval = g
 
 # %%
 # Evaluation by bucket function
-def eval_by_bucket(model, df_eval, N=40):
-    preds = model.predict(df_eval['cookie'].to_list(), N=N)
+def bucket(node):
+    f = pop_counts.filter(pl.col('node') == node)['freq'][0]
+    if f >= th2:
+        return 'high'
+    elif f >= th1:
+        return 'medium'
+    else:
+        return 'low'
+
+def eval_by_bucket(df_eval: pl.DataFrame, preds: pl.Series):
     df_true = df_eval.select(['cookie','node']).with_columns(pl.lit(1).alias('true'))
     df_pred = preds.with_columns(pl.lit(1).alias('pred'))
-    df_merge = df_true.join(df_pred, on=['cookie','node'], how='left').fill_null({'pred': 0})
-    df_merge = df_merge.with_columns(pl.col('node').map(bucket).alias('bucket'))
+    df_merge = df_true.join(df_pred, on=['cookie','node'], how='left').with_columns(pl.col("pred").fill_nan(0))
+    df_merge = df_merge.with_columns(pl.col('node').apply(bucket, return_dtype=pl.Utf8).alias('bucket'))
     result = {}
     for b in ['high','medium','low']:
         df_b = df_merge.filter(pl.col('bucket') == b)
@@ -33,24 +41,18 @@ quantiles = [0.33, 0.66]
 freqs = pop_counts['freq'].to_list()
 th1 = freqs[int(total_items * quantiles[0])]
 th2 = freqs[int(total_items * quantiles[1])]
-def bucket(node):
-    f = pop_counts.filter(pl.col('node') == node)['freq'][0]
-    if f >= th2:
-        return 'high'
-    elif f >= th1:
-        return 'medium'
-    else:
-        return 'low'
 
 # %%
 
 # Run for ALS
 als = ALSRecommender(df_events)
 als.fit(df_train['cookie'], df_train['node'], df_train['event'])
-preds = als.predict(df_eval['cookie'].to_list(), N=N)
 
 # %%
-res_als = eval_by_bucket(als, df_eval)
+als_preds = als.predict(df_eval['cookie'].to_list(), N=40)
+
+# %%
+res_als = eval_by_bucket(df_eval, als_preds)
 
 
 # %%
