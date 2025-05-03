@@ -1,21 +1,21 @@
 import polars as pl
 from scipy.sparse import csr_matrix
 import numpy as np
-import implicit
+from implicit.nearest_neighbours import TFIDFRecommender as _TfIdfRecommender
+from implicit.nearest_neighbours import CosineRecommender as _CosineRecommender
 
-
-class ALSRecommender:
+class TfidfRecommender:
     """
-    ALS-based recommender using implicit library.
+    TF-IDF based recommender with a similar interface to ALSRecommender.
     """
-    def __init__(self, df_events: pl.DataFrame, factors: int = 60, iterations: int = 10, dedupe: bool = True, **als_kwargs):
-        self.als_kwargs = {"factors": factors, "iterations": iterations, **als_kwargs}
-        self.dedupe = dedupe
+    def __init__(self, df_events: pl.DataFrame, dedupe: bool = True, **kwargs):
         self.event_weights = {
-            row["event"]: 4 if row["is_contact"] else 1
+            row["event"]: 2.0 if row["is_contact"] else 1.0
             for row in df_events.select(["event", "is_contact"]).to_dicts()
         }
-        self.model = None
+        self.model = _TfIdfRecommender(K=40, **kwargs)
+        # self.model = _CosineRecommender(K=40, **kwargs)
+        self.dedupe = dedupe
         self.user_id_to_index = {}
         self.item_id_to_index = {}
         self.index_to_item_id = {}
@@ -48,9 +48,16 @@ class ALSRecommender:
                 (values, (rows, cols)), shape=(len(user_ids), len(item_ids))
             )
 
-        self.model = implicit.als.AlternatingLeastSquares(**self.als_kwargs)
         self.model.fit(self.sparse_matrix)
+        col_sums = np.array(self.sparse_matrix.sum(axis=0)).ravel()
+        popular_indices = np.argsort(-col_sums)
+        self.popular_item_indices = popular_indices.tolist()
 
+        self.seen = {
+            user_id: set(self.sparse_matrix[idx].indices.tolist())
+            for user_id, idx in self.user_id_to_index.items()
+        }
+        
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:
             raise ValueError("Model is not fitted. Call fit() before predict().")
@@ -67,11 +74,26 @@ class ALSRecommender:
             N=N,
             filter_already_liked_items=True,
         )
+        rec_lists = recommendations.tolist()
+        for rec in rec_lists:
+            popular_idx = 0
+            seen = set()
+            for idx, rec_idx in enumerate(rec):
+                if rec_idx == -1:
+                    while True:
+                        popular_rec = self.popular_item_indices[popular_idx]
+                        if popular_rec not in seen and popular_rec not in self.seen[valid_users[idx]]:
+                            break
+                        popular_idx += 1
+                    rec[idx] = popular_rec
+                    popular_idx += 1
+                else:
+                    seen.add(rec_idx)
 
         df_pred = pl.DataFrame(
             {
                 "cookie": valid_users,
-                "node": [[self.index_to_item_id[i] for i in recs] for recs in recommendations.tolist()],
+                "node": [[self.index_to_item_id[i] for i in recs] for recs in rec_lists],
                 "scores": scores.tolist(),
             }
         )
