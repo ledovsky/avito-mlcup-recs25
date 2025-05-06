@@ -1,6 +1,7 @@
 import polars as pl
 from scipy.sparse import csr_matrix
 import numpy as np
+import faiss
 from lightfm import LightFM
 
 class LightFMRecommender:
@@ -58,29 +59,26 @@ class LightFMRecommender:
         if not valid_users:
             return pl.DataFrame(columns=["cookie", "node", "scores"])
 
-        # batch predict for all users
+        # retrieve user embeddings and item embeddings
         user_indices = np.array([self.user_id_to_index[u] for u in valid_users])
-        n_items = self.sparse_matrix.shape[1]
-        # predict scores for each user-item pair
-        scores_matrix = self.model.predict(
-            user_indices[:, None], np.arange(n_items)[None, :], num_threads=4
-        )
-        # get top-N indices per user
-        top_indices = np.argpartition(-scores_matrix, N, axis=1)[:, :N]
-
+        user_embs = self.model.user_embeddings[user_indices]
+        item_embs = self.model.item_embeddings
+        # normalize embeddings for cosine similarity
+        faiss.normalize_L2(user_embs)
+        faiss.normalize_L2(item_embs)
+        dim = item_embs.shape[1]
+        # build Faiss index
+        index = faiss.IndexFlatIP(dim)
+        index.add(item_embs)
+        # search nearest neighbors
+        D, I = index.search(user_embs, N)
         predictions = []
         for i, u in enumerate(valid_users):
-            idxs = top_indices[i]
-            scs = scores_matrix[i, idxs]
-            # sort top-N for this user
-            order = np.argsort(-scs)
-            for j in order:
-                item_idx = idxs[j]
+            for rank, item_idx in enumerate(I[i]):
                 predictions.append({
                     "cookie": u,
-                    "node": self.index_to_item_id[item_idx],
-                    "scores": scs[j],
+                    "node": self.index_to_item_id[int(item_idx)],
+                    "scores": float(D[i][rank]),
                 })
-
         df_pred = pl.DataFrame(predictions)
         return df_pred
