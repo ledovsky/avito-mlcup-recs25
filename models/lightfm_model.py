@@ -46,9 +46,19 @@ class LightFMRecommender:
             (values, (rows, cols)), shape=(len(user_ids), len(item_ids))
         )
 
-        # Initialize and train LightFM model
+        # Initialize and train LightFM model with partial fit and loss logging
         self.model = LightFM(**self.lfm_init_kwargs)
-        self.model.fit(self.sparse_matrix, **self.lfm_fit_kwargs)
+        epochs = self.lfm_fit_kwargs.get("epochs", 1)
+        threads = self.lfm_fit_kwargs.get("num_threads", 1)
+        for epoch in range(1, epochs + 1):
+            self.model.fit(
+                self.sparse_matrix,
+                epochs=1,
+                num_threads=threads,
+                verbose=self.lfm_fit_kwargs.get("verbose", False),
+            )
+            loss = self.model.get_loss(self.sparse_matrix, num_threads=threads)
+            print(f"Epoch {epoch}/{epochs} - loss: {loss:.4f}")
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:
