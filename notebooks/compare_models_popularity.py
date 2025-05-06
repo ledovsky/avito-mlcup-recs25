@@ -1,4 +1,7 @@
 # %%
+%loadext autoreload
+%autorealod 2
+# %%
 import sys; sys.path.append("../")
 import polars as pl
 from utils import get_data
@@ -15,16 +18,16 @@ df_test_users, df_clickstream, df_cat, df_text, df_events, df_train, df_eval = g
 pop_counts = df_train.select("cookie", "node").unique().group_by('node').len().rename({'len':'freq'})
 pop_counts = pop_counts.sort('freq', descending=True)
 total_items = pop_counts.shape[0]
-quantiles = [0.33, 0.66]
+quantiles = [0.10, 0.30]
 freqs = pop_counts['freq'].to_list()
 th1 = freqs[int(total_items * quantiles[0])]
 th2 = freqs[int(total_items * quantiles[1])]
 
 # Evaluation by bucket function
 def bucket(freq):
-    if freq >= th2:
+    if freq >= th1:
         return 'high'
-    elif freq >= th1:
+    elif freq >= th2:
         return 'medium'
     else:
         return 'low'
@@ -70,7 +73,6 @@ res_tfidf = eval_by_bucket(tfidf, df_eval)
 # %%
 
 df_merge.group_by("bucket").agg(pl.len())
-# int(total_items * quantiles[0])
 
 # %%
 pop_counts
@@ -87,5 +89,19 @@ nodes_stats = (
     .with_columns(pl.col("freq").map_elements(bucket).alias("bucket"))
 )
 
+# %%
 
-nodes_stats.group_by("")
+nodes_stats.group_by("bucket").sum()
+# %%
+df_train["week"].max()
+
+# %%
+df_clickstream = pl.read_parquet(f'../data/clickstream.pq')
+
+# %%
+df_clickstream.with_columns(pl.col("event_date").dt.day)
+# %%
+min_date = df_clickstream['event_date'].min()
+df_clickstream.with_columns(
+        ((pl.col('event_date').cast(pl.Date) - pl.lit(min_date)).dt.days() // 7 + 1).alias('week')
+    )
