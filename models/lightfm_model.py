@@ -48,7 +48,7 @@ class LightFMRecommender:
 
         # Initialize and train LightFM model
         self.model = LightFM(no_components=self.lfm_kwargs["no_components"], **{k: v for k, v in self.lfm_kwargs.items() if k not in ["no_components", "epochs"]})
-        self.model.fit(self.sparse_matrix, epochs=self.lfm_kwargs["epochs"], num_threads=4)
+        self.model.fit(self.sparse_matrix, epochs=self.lfm_kwargs["epochs"], num_threads=4, verbose=True)
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:
@@ -58,15 +58,29 @@ class LightFMRecommender:
         if not valid_users:
             return pl.DataFrame(columns=["cookie", "node", "scores"])
 
+        # batch predict for all users
+        user_indices = np.array([self.user_id_to_index[u] for u in valid_users])
+        n_items = self.sparse_matrix.shape[1]
+        # predict scores for each user-item pair
+        scores_matrix = self.model.predict(
+            user_indices[:, None], np.arange(n_items)[None, :], num_threads=4
+        )
+        # get top-N indices per user
+        top_indices = np.argpartition(-scores_matrix, N, axis=1)[:, :N]
+
         predictions = []
-        for u in valid_users:
-            u_idx = self.user_id_to_index[u]
-            scores = self.model.predict(u_idx, np.arange(self.sparse_matrix.shape[1]))
-            top_indices = np.argpartition(-scores, N)[:N]
-            top_scores = scores[top_indices]
-            items = [self.index_to_item_id[i] for i in top_indices]
-            for item, score in zip(items, top_scores):
-                predictions.append({"cookie": u, "node": item, "scores": score})
+        for i, u in enumerate(valid_users):
+            idxs = top_indices[i]
+            scs = scores_matrix[i, idxs]
+            # sort top-N for this user
+            order = np.argsort(-scs)
+            for j in order:
+                item_idx = idxs[j]
+                predictions.append({
+                    "cookie": u,
+                    "node": self.index_to_item_id[item_idx],
+                    "scores": scs[j],
+                })
 
         df_pred = pl.DataFrame(predictions)
         return df_pred
