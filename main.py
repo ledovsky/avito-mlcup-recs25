@@ -4,6 +4,7 @@ import argparse
 from utils import get_data, recall_at
 from models.implicit_model import ALSRecommender
 from models.tfidf_model import TfidfRecommender
+from models.lightfm_model import LightFMRecommender
 
 
 def main():
@@ -14,8 +15,8 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["als", "tfidf"],
-        help="Which model to run ('als' or 'tfidf').",
+        choices=["als", "tfidf", "lightfm"],
+        help="Which model to run ('als', 'tfidf', or 'lightfm').",
     )
     parser.add_argument(
         "--submission",
@@ -36,6 +37,8 @@ def main():
         model = ALSRecommender(df_events)
     elif args.model == "tfidf":
         model = TfidfRecommender(df_events)
+    elif args.model == "lightfm":
+        model = LightFMRecommender(df_events)
     else:
         raise NotImplementedError(f"Model '{args.model}' is not implemented")
 
