@@ -21,7 +21,7 @@ class ALSRecommender:
         self.index_to_item_id = {}
         self.sparse_matrix = None
 
-    def fit(self, users: pl.Series, nodes: pl.Series, events: pl.Series) -> None:
+    def fit(self, users: pl.Series, nodes: pl.Series, events: pl.Series, weeks: pl.Series | None = None) -> None:
         user_ids = users.unique().to_list()
         item_ids = nodes.unique().to_list()
 
@@ -31,7 +31,15 @@ class ALSRecommender:
 
         rows = users.replace_strict(self.user_id_to_index).to_list()
         cols = nodes.replace_strict(self.item_id_to_index).to_list()
-        values = [self.event_weights.get(ev, 1) for ev in events.to_list()]
+        base_values = [self.event_weights.get(ev, 1) for ev in events.to_list()]
+        if weeks is not None:
+            weeks_list = weeks.to_list()
+            values = [
+                base_values[i] * (2 if weeks_list[i] > 4 else 1)
+                for i in range(len(base_values))
+            ]
+        else:
+            values = base_values
 
         if self.dedupe:
             # collapse duplicate user-item pairs keeping only the maximum weight

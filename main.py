@@ -44,7 +44,7 @@ def main():
 
     # 3) fit on training split and evaluate
     print("Fitting on train split...")
-    model.fit(df_train["cookie"], df_train["node"], df_train["event"])
+    model.fit(df_train["cookie"], df_train["node"], df_train["event"], df_train["week"])
 
     print(f"Generating top {TOP_K} predictions on eval split...")
     eval_preds = model.predict(df_eval["cookie"].to_list(), N=TOP_K)
@@ -55,7 +55,7 @@ def main():
     # 4) optionally retrain on full data & write submission
     if args.submission:
         print("Retraining on full clickstream...")
-        model.fit(df_clickstream["cookie"], df_clickstream["node"], df_clickstream["event"])
+        model.fit(df_clickstream["cookie"], df_clickstream["node"], df_clickstream["event"], df_clickstream["week"])
 
         print(f"Generating top {TOP_K} for test users...")
         test_users = df_test_users["cookie"].to_list()
