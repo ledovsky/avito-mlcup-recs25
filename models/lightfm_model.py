@@ -8,20 +8,29 @@ class LightFMRecommender:
     """
     LightFM-based recommender using LightFM library.
     """
-    def __init__(self, df_events: pl.DataFrame, no_components: int = 60, epochs: int = 10, dedupe: bool = True, **lfm_kwargs):
-        self.lfm_kwargs = {"no_components": no_components, "epochs": epochs, **lfm_kwargs}
-        self.dedupe = dedupe
+    def __init__(self, df_events: pl.DataFrame):
+        self.lfm_init_kwargs = {
+            "no_components": 60, 
+            "loss": "warp", 
+        }
+        self.lfm_fit_kwargs = {
+            "epochs": 10, 
+            "verbose": True,
+            "num_threads": 8,
+        }
+
         self.event_weights = {
             row["event"]: 4 if row["is_contact"] else 1
             for row in df_events.select(["event", "is_contact"]).to_dicts()
         }
+
         self.model = None
         self.user_id_to_index = {}
         self.item_id_to_index = {}
         self.index_to_item_id = {}
         self.sparse_matrix = None
 
-    def fit(self, users: pl.Series, nodes: pl.Series, events: pl.Series) -> None:
+    def fit(self, users: pl.Series, nodes: pl.Series, events: pl.Series, weeks=None) -> None:
         user_ids = users.unique().to_list()
         item_ids = nodes.unique().to_list()
 
@@ -33,23 +42,13 @@ class LightFMRecommender:
         cols = nodes.replace_strict(self.item_id_to_index).to_list()
         values = [self.event_weights.get(ev, 1) for ev in events.to_list()]
 
-        if self.dedupe:
-            pair_max = {}
-            for u_idx, i_idx, w in zip(rows, cols, values):
-                key = (u_idx, i_idx)
-                pair_max[key] = max(pair_max.get(key, w), w)
-            final_rows, final_cols, final_vals = zip(*[(u, i, w) for (u, i), w in pair_max.items()])
-            self.sparse_matrix = csr_matrix(
-                (final_vals, (final_rows, final_cols)), shape=(len(user_ids), len(item_ids))
-            )
-        else:
-            self.sparse_matrix = csr_matrix(
-                (values, (rows, cols)), shape=(len(user_ids), len(item_ids))
-            )
+        self.sparse_matrix = csr_matrix(
+            (values, (rows, cols)), shape=(len(user_ids), len(item_ids))
+        )
 
         # Initialize and train LightFM model
-        self.model = LightFM(no_components=self.lfm_kwargs["no_components"], **{k: v for k, v in self.lfm_kwargs.items() if k not in ["no_components", "epochs"]})
-        self.model.fit(self.sparse_matrix, epochs=self.lfm_kwargs["epochs"], num_threads=4, verbose=True)
+        self.model = LightFM(**self.lfm_init_kwargs)
+        self.model.fit(self.sparse_matrix, **self.lfm_fit_kwargs)
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:
