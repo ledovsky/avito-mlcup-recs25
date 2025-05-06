@@ -2,15 +2,14 @@ import polars as pl
 from datetime import timedelta
 
 
-def get_data():
-    DATA_DIR = './data'
+def get_data(data_dir="./data"):
 
-    df_test_users = pl.read_parquet(f'{DATA_DIR}/test_users.pq')
-    df_clickstream = pl.read_parquet(f'{DATA_DIR}/clickstream.pq')
+    df_test_users = pl.read_parquet(f'{data_dir}/test_users.pq')
+    df_clickstream = pl.read_parquet(f'{data_dir}/clickstream.pq')
 
-    df_cat_features = pl.read_parquet(f'{DATA_DIR}/cat_features.pq')
-    df_text_features = pl.read_parquet(f'{DATA_DIR}/text_features.pq')
-    df_event = pl.read_parquet(f'{DATA_DIR}/events.pq')
+    df_cat_features = pl.read_parquet(f'{data_dir}/cat_features.pq')
+    df_text_features = pl.read_parquet(f'{data_dir}/text_features.pq')
+    df_event = pl.read_parquet(f'{data_dir}/events.pq')
 
     EVAL_DAYS_TRESHOLD = 14
     
