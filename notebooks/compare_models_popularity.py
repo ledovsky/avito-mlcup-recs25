@@ -1,12 +1,13 @@
 # %%
-%loadext autoreload
-%autorealod 2
+%load_ext autoreload
+%autoreload 2
 # %%
 import sys; sys.path.append("../")
 import polars as pl
 from utils import get_data
 from models.implicit_model import ALSRecommender
 from models.tfidf_model import TfidfRecommender
+from models.lightfm_model import LightFMRecommender
 import numpy as np
 
 # %%
@@ -71,6 +72,10 @@ tfidf.fit(df_train['cookie'], df_train['node'], df_train['event'])
 res_tfidf = eval_by_bucket(tfidf, df_eval)
 
 # %%
+# Run for LFM
+lfm = LightFMRecommender(df_events)
+lfm.fit(df_train['cookie'], df_train['node'], df_train['event'])
+# %%
 
 df_merge.group_by("bucket").agg(pl.len())
 
@@ -94,14 +99,3 @@ nodes_stats = (
 nodes_stats.group_by("bucket").sum()
 # %%
 df_train["week"].max()
-
-# %%
-df_clickstream = pl.read_parquet(f'../data/clickstream.pq')
-
-# %%
-df_clickstream.with_columns(pl.col("event_date").dt.day)
-# %%
-min_date = df_clickstream['event_date'].min()
-df_clickstream.with_columns(
-        ((pl.col('event_date').cast(pl.Date) - pl.lit(min_date)).dt.days() // 7 + 1).alias('week')
-    )

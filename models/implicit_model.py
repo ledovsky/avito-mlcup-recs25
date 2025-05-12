@@ -8,13 +8,21 @@ class ALSRecommender:
     """
     ALS-based recommender using implicit library.
     """
-    def __init__(self, df_events: pl.DataFrame, factors: int = 60, iterations: int = 10, dedupe: bool = True, **als_kwargs):
-        self.als_kwargs = {"factors": factors, "iterations": iterations, **als_kwargs}
-        self.dedupe = dedupe
+    def __init__(self, df_events: pl.DataFrame, **als_kwargs):
+
+        # coniguration
+        self.als_kwargs = {
+            "factors": 60, 
+            "iterations": 10, 
+            **als_kwargs
+        }
+        self.dedupe = False
+
         self.event_weights = {
             row["event"]: 4 if row["is_contact"] else 1
             for row in df_events.select(["event", "is_contact"]).to_dicts()
         }
+
         self.model = None
         self.user_id_to_index = {}
         self.item_id_to_index = {}
@@ -35,7 +43,7 @@ class ALSRecommender:
         if weeks is not None:
             weeks_list = weeks.to_list()
             values = [
-                base_values[i] * (2 if weeks_list[i] > 4 else 1)
+                base_values[i] * (2 if weeks_list[i] >= 4 else 1)
                 for i in range(len(base_values))
             ]
         else:

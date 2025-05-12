@@ -8,7 +8,7 @@ def get_data(data_dir="./data"):
     df_clickstream = pl.read_parquet(f'{data_dir}/clickstream.pq')
     min_date = df_clickstream['event_date'].min()
     df_clickstream = df_clickstream.with_columns(
-        ((pl.col('event_date').cast(pl.Date) - pl.lit(min_date).cast(pl.Date)).dt.days() // 7 + 1).alias('week')
+        ((pl.col('event_date').cast(pl.Date) - pl.lit(min_date)).dt.total_days() // 7 + 1).alias('week')
     )
 
     df_cat_features = pl.read_parquet(f'{data_dir}/cat_features.pq')

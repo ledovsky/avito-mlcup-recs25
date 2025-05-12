@@ -3,6 +3,7 @@ from scipy.sparse import csr_matrix
 import numpy as np
 import faiss
 from lightfm import LightFM
+from lightfm.evaluation import auc_score, recall_at_k
 
 class LightFMRecommender:
     """
@@ -11,13 +12,12 @@ class LightFMRecommender:
     def __init__(self, df_events: pl.DataFrame):
         self.lfm_init_kwargs = {
             "no_components": 60, 
-            "loss": "warp", 
+            "loss": "bpr", 
         }
         self.lfm_fit_kwargs = {
-            "epochs": 10, 
-            "verbose": True,
             "num_threads": 8,
         }
+        self.epochs = 10
 
         self.event_weights = {
             row["event"]: 4 if row["is_contact"] else 1
@@ -48,17 +48,15 @@ class LightFMRecommender:
 
         # Initialize and train LightFM model with partial fit and loss logging
         self.model = LightFM(**self.lfm_init_kwargs)
-        epochs = self.lfm_fit_kwargs.get("epochs", 1)
-        threads = self.lfm_fit_kwargs.get("num_threads", 1)
-        for epoch in range(1, epochs + 1):
-            self.model.fit(
+        for epoch in range(1, self.epochs + 1):
+            self.model.fit_partial(
                 self.sparse_matrix,
                 epochs=1,
-                num_threads=threads,
-                verbose=self.lfm_fit_kwargs.get("verbose", False),
+                **self.lfm_fit_kwargs,
             )
-            loss = self.model.get_loss(self.sparse_matrix, num_threads=threads)
-            print(f"Epoch {epoch}/{epochs} - loss: {loss:.4f}")
+            auc = auc_score(self.model, self.sparse_matrix).mean()
+            # print(f"Epoch {epoch}/{self.epochs} - loss: {loss:.4f}")
+            print(f"Epoch {epoch}/{self.epochs} - rocauc: {auc:.4f}")
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:
