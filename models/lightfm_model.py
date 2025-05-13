@@ -118,12 +118,10 @@ class LightFMRecommender:
         user_indices = np.array([self.user_id_to_index[u] for u in valid_users])
         user_embs = self.model.user_embeddings[user_indices]
         item_embs = self.model.item_embeddings
-        # normalize embeddings for cosine similarity
-        faiss.normalize_L2(user_embs)
-        faiss.normalize_L2(item_embs)
+        # use dot product (inner product) similarity
         dim = item_embs.shape[1]
-        # build Faiss HNSW index
-        index = faiss.IndexHNSWFlat(dim, 32)
+        # build Faiss HNSW index with inner product metric
+        index = faiss.IndexHNSWFlat(dim, 32, faiss.METRIC_INNER_PRODUCT)
         index.add(item_embs)
         # search nearest neighbors
         D, I = index.search(user_embs, N)
