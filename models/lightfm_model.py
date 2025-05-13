@@ -7,19 +7,21 @@ from sklearn.metrics import roc_auc_score
 from lightfm import LightFM
 from lightfm.evaluation import auc_score, recall_at_k
 
+
 class LightFMRecommender:
     """
     LightFM-based recommender using LightFM library.
     """
+
     def __init__(self, df_events: pl.DataFrame):
         self.lfm_init_kwargs = {
-            "no_components": 60, 
-            "loss": "bpr", 
+            "no_components": 30,
+            "loss": "bpr",
         }
         self.lfm_fit_kwargs = {
             "num_threads": 8,
         }
-        self.epochs = 10
+        self.epochs = 5
         self.event_weights = {
             row["event"]: 4 if row["is_contact"] else 1
             for row in df_events.select(["event", "is_contact"]).to_dicts()
@@ -31,7 +33,9 @@ class LightFMRecommender:
         self.index_to_item_id = {}
         self.sparse_matrix = None
 
-    def fit(self, users: pl.Series, nodes: pl.Series, events: pl.Series, weeks=None) -> None:
+    def fit(
+        self, users: pl.Series, nodes: pl.Series, events: pl.Series, weeks=None
+    ) -> None:
         user_ids = users.unique().to_list()
         item_ids = nodes.unique().to_list()
 
@@ -52,17 +56,18 @@ class LightFMRecommender:
         val_users = random.sample(user_ids, min(100, len(user_ids)))
         # map each val_user to positive and negative items
         df_inter = pl.DataFrame({"user": users, "item": nodes})
-        user_groups = df_inter.filter(pl.col("user").is_in(val_users))\
-            .group_by("user")\
-            .agg(pl.col("item").unique().alias("pos_items"))\
+        user_groups = (
+            df_inter.filter(pl.col("user").is_in(val_users))
+            .group_by("user")
+            .agg(pl.col("item").unique().alias("pos_items"))
             .to_dicts()
+        )
         self._val_data = {
             row["user"]: {
                 "pos": row["pos_items"],
                 "neg": random.sample(
-                    list(set(item_ids) - set(row["pos_items"])),
-                    len(row["pos_items"])
-                )
+                    list(set(item_ids) - set(row["pos_items"])), len(row["pos_items"])
+                ),
             }
             for row in user_groups
         }
@@ -82,18 +87,22 @@ class LightFMRecommender:
                 for item in self._val_data[u]["pos"]:
                     idx = self.item_id_to_index[item]
                     y_true.append(1)
-                    y_score.append(np.dot(
-                        self.model.user_embeddings[u_idx],
-                        self.model.item_embeddings[idx]
-                    ))
+                    y_score.append(
+                        np.dot(
+                            self.model.user_embeddings[u_idx],
+                            self.model.item_embeddings[idx],
+                        )
+                    )
                 # negatives
                 for item in self._val_data[u]["neg"]:
                     idx = self.item_id_to_index[item]
                     y_true.append(0)
-                    y_score.append(np.dot(
-                        self.model.user_embeddings[u_idx],
-                        self.model.item_embeddings[idx]
-                    ))
+                    y_score.append(
+                        np.dot(
+                            self.model.user_embeddings[u_idx],
+                            self.model.item_embeddings[idx],
+                        )
+                    )
             roc = roc_auc_score(y_true, y_score)
             print(f"Epoch {epoch}/{self.epochs} - val_roc_auc: {roc:.4f}")
 
@@ -113,18 +122,20 @@ class LightFMRecommender:
         faiss.normalize_L2(user_embs)
         faiss.normalize_L2(item_embs)
         dim = item_embs.shape[1]
-        # build Faiss index
-        index = faiss.IndexFlatIP(dim)
+        # build Faiss HNSW index
+        index = faiss.IndexHNSWFlat(dim, 32)
         index.add(item_embs)
         # search nearest neighbors
         D, I = index.search(user_embs, N)
         predictions = []
         for i, u in enumerate(valid_users):
             for rank, item_idx in enumerate(I[i]):
-                predictions.append({
-                    "cookie": u,
-                    "node": self.index_to_item_id[int(item_idx)],
-                    "scores": float(D[i][rank]),
-                })
+                predictions.append(
+                    {
+                        "cookie": u,
+                        "node": self.index_to_item_id[int(item_idx)],
+                        "scores": float(D[i][rank]),
+                    }
+                )
         df_pred = pl.DataFrame(predictions)
         return df_pred
