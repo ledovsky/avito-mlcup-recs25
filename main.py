@@ -35,16 +35,18 @@ def main():
     # 2) initialize model
     if args.model == "als":
         model = ALSRecommender(df_events)
+        model.fit(df_train)
     elif args.model == "tfidf":
         model = TfidfRecommender(df_events)
+        model.fit(df_train["cookie"], df_train["node"], df_train["event"], df_train["week"])
     elif args.model == "lightfm":
         model = LightFMRecommender(df_events)
+        model.fit(df_train["cookie"], df_train["node"], df_train["event"], df_train["week"])
     else:
         raise NotImplementedError(f"Model '{args.model}' is not implemented")
 
     # 3) fit on training split and evaluate
     print("Fitting on train split...")
-    model.fit(df_train["cookie"], df_train["node"], df_train["event"], df_train["week"])
 
     print(f"Generating top {TOP_K} predictions on eval split...")
     eval_preds = model.predict(df_eval["cookie"].to_list(), N=TOP_K)

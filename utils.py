@@ -15,6 +15,8 @@ def get_data(data_dir="./data"):
     df_text_features = pl.read_parquet(f'{data_dir}/text_features.pq')
     df_event = pl.read_parquet(f'{data_dir}/events.pq')
 
+    df_clickstream = df_clickstream.join(df_event, on="event")
+
     EVAL_DAYS_TRESHOLD = 14
     
     treshhold = df_clickstream['event_date'].max() - timedelta(days=EVAL_DAYS_TRESHOLD)
