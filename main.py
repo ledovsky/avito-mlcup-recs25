@@ -50,12 +50,12 @@ def main():
     # 2) initialize model
     if args.model == "als":
         als_config = {
-            "do_dedupe": True,
+            "do_dedupe": False,
             "use_week_discount": False,
             "filter_rare_events": False,
             "contact_weight": 10,
-            "als_factors": 60,
-            "iterations": 10,
+            "als_factors": 120,
+            "iterations": 20,
         }
         model = ALSRecommender(df_events, **als_config)
         run.config.update(als_config)
@@ -76,7 +76,7 @@ def main():
     eval_preds = model.predict(df_eval["cookie"].to_list(), N=TOP_K)
 
     pred_df = make_pred_df(df_train, df_eval, eval_preds)
-    pred_df.write_csv(f"pred_{run.id}.csv")
+    pred_df.write_csv(f"pred_{run.name}.csv")
 
     recall = recall_at(df_eval, eval_preds, k=TOP_K)
     run.summary["Recall@{TOP_K}"] = recall
