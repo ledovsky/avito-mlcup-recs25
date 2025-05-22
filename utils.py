@@ -58,3 +58,32 @@ def recall_at(df_true, df_pred, k=40):
             ).count()
         ]
     )['value'].mean()
+
+
+def make_pred_df(df_train:pl.DataFrame, df_eval: pl.DataFrame, preds: pl.Series):
+    """Возвращает датафрейм с предсказаниями с дополнительными разрезами"""
+
+    # Оценка бакетов по популярности
+    pop_counts = df_train.select("cookie", "node").unique().group_by('node').len().rename({'len':'freq'})
+    pop_counts = pop_counts.sort('freq', descending=True)
+    total_items = pop_counts.shape[0]
+    quantiles = [0.10, 0.30]
+    freqs = pop_counts['freq'].to_list()
+    th1 = freqs[int(total_items * quantiles[0])]
+    th2 = freqs[int(total_items * quantiles[1])]
+
+    # Evaluation by bucket function
+    def bucket(freq):
+        if freq >= th1:
+            return 'high'
+        elif freq >= th2:
+            return 'medium'
+        else:
+            return 'low'
+
+    df_true = df_eval.select(['cookie','node']).with_columns(pl.lit(1).alias('true'))
+    df_pred = preds.with_columns(pl.lit(1).alias('pred'))
+    df_merge = df_true.join(df_pred, on=['cookie','node'], how='left').with_columns(pl.col("pred").fill_nan(0))
+    df_merge = df_merge.join(pop_counts, "node", how="left")
+    df_merge = df_merge.with_columns(pl.col("freq").map_elements(bucket).alias("bucket"))
+    return df_merge

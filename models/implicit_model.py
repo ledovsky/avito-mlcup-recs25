@@ -9,20 +9,28 @@ class ALSRecommender(BaseModel):
     """
     ALS-based recommender using implicit library.
     """
-    def __init__(self, df_events: pl.DataFrame, **als_kwargs):
+    def __init__(
+            self, 
+            df_events: pl.DataFrame, 
+            do_dedupe: bool,
+            use_week_discount: bool,
+            filter_rare_events: bool,
+            contact_weight: int,
+            als_factors: int,
+            iterations: int
+    ):
 
         # coniguration
         self.als_kwargs = {
-            "factors": 120, 
-            "iterations": 10, 
-            **als_kwargs
+            "factors": als_factors, 
+            "iterations": iterations, 
         }
-        self.do_dedupe = False
-        self.use_week_discount = False
-        self.filter_rare_events = False
+        self.do_dedupe = do_dedupe
+        self.use_week_discount = use_week_discount
+        self.filter_rare_events = filter_rare_events
 
         self.event_weights = {
-            row["event"]: 10 if row["is_contact"] else 1
+            row["event"]: contact_weight if row["is_contact"] else 1
             for row in df_events.select(["event", "is_contact"]).to_dicts()
         }
 

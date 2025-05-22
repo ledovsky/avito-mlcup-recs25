@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 
-from utils import get_data, recall_at
+import wandb
+
+from utils import get_data, recall_at, make_pred_df
 from models.implicit_model import ALSRecommender
 from models.tfidf_model import TfidfRecommender
 from models.lightfm_model import LightFMRecommender
@@ -29,12 +31,34 @@ def main():
     # fixed number of recommendations
     TOP_K = 40
 
+
+    # Start a new wandb run to track this script.
+    run = wandb.init(
+        # Set the wandb entity where your project will be logged (generally your team name).
+        entity="alexander-ledovsky-just-myself",
+        # Set the wandb project where this run will be logged.
+        project="avito-mlcup-recs25",
+        # Track hyperparameters and run metadata.
+        config={
+            "model": args.model,
+        },
+    )
+
     # 1) load data
     df_test_users, df_clickstream, df_cat, df_text, df_events, df_train, df_eval = get_data()
 
     # 2) initialize model
     if args.model == "als":
-        model = ALSRecommender(df_events)
+        als_config = {
+            "do_dedupe": True,
+            "use_week_discount": False,
+            "filter_rare_events": False,
+            "contact_weight": 10,
+            "als_factors": 60,
+            "iterations": 10,
+        }
+        model = ALSRecommender(df_events, **als_config)
+        run.config.update(als_config)
         model.fit(df_train)
     elif args.model == "tfidf":
         model = TfidfRecommender(df_events)
@@ -51,7 +75,11 @@ def main():
     print(f"Generating top {TOP_K} predictions on eval split...")
     eval_preds = model.predict(df_eval["cookie"].to_list(), N=TOP_K)
 
+    pred_df = make_pred_df(df_train, df_eval, eval_preds)
+    pred_df.write_csv(f"pred_{run.id}.csv")
+
     recall = recall_at(df_eval, eval_preds, k=TOP_K)
+    run.summary["Recall@{TOP_K}"] = recall
     print(f"Recall@{TOP_K} on eval: {recall:.4f}")
 
     # 4) optionally retrain on full data & write submission
@@ -70,6 +98,8 @@ def main():
         print("No --submission provided; skipping retraining & submission step.")
 
     print("Done.")
+
+    run.finish()
 
 
 if __name__ == "__main__":
