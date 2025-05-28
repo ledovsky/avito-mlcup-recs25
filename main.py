@@ -7,6 +7,7 @@ from utils import get_data, recall_at, make_pred_df
 from models.implicit_model import ALSRecommender
 from models.tfidf_model import TfidfRecommender
 from models.lightfm_model import LightFMRecommender
+from models.popular import PopularLocCat
 
 
 def main():
@@ -17,8 +18,8 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["als", "tfidf", "lightfm"],
-        help="Which model to run ('als', 'tfidf', or 'lightfm').",
+        choices=["als", "tfidf", "lightfm", "popular-loc-cat"],
+        help="Which model to run ('als', 'tfidf', 'lightfm', or 'popular-loc-cat').",
     )
     parser.add_argument(
         "--submission",
@@ -66,6 +67,9 @@ def main():
     elif args.model == "lightfm":
         model = LightFMRecommender(df_events)
         model.fit(df_train["cookie"], df_train["node"], df_train["event"], df_train["week"])
+    elif args.model == "popular-loc-cat":
+        model = PopularLocCat(df_cat)
+        model.fit(df_train)
     else:
         raise NotImplementedError(f"Model '{args.model}' is not implemented")
 
