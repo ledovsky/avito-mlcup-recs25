@@ -74,7 +74,8 @@ class PopularLocCat(BaseModel):
                 recs = recs[:N]
             records.append((user, recs))
         df = pl.DataFrame(records, schema=["cookie", "recs"])
-        return df.explode("recs").rename({"recs": "node"})
+        df = df.explode("recs").rename({"recs": "node"})
+        return df.select(["cookie", "node"])
 
 
 def get_popular(df, eval_users):
