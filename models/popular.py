@@ -6,6 +6,8 @@ from .base import BaseModel
 class PopularLocCat(BaseModel):
     def __init__(self, df_cat):
         self.df_cat = df_cat
+        self.populars = None
+        self.recs_dict = None
 
     def fit(self, df_train: pl.DataFrame):
         self.df_cat.sort("node")
@@ -54,11 +56,25 @@ class PopularLocCat(BaseModel):
         for cookie, recs in recs.iter_rows():
             recs_dict[cookie] = recs
 
-        self.counts = counts
         self.recs_dict = recs_dict
+        self.populars = counts.sort("count", descending=True).head(100)["node"].to_list()
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
-        pass
+        """
+        Predict top N recommendations for given users.
+        """
+        records: list[tuple[int | str, list[int | str]]] = []
+        for user in user_to_pred:
+            recs = list(self.recs_dict.get(user, []))
+            if len(recs) < N:
+                # fill up with popular items
+                fill_items = [item for item in self.populars if item not in recs]
+                recs += fill_items[: N - len(recs)]
+            else:
+                recs = recs[:N]
+            records.append((user, recs))
+        df = pl.DataFrame(records, schema=["cookie", "recs"])
+        return df.explode("recs").rename({"recs": "node"})
 
 
 def get_popular(df, eval_users):
