@@ -77,16 +77,18 @@ class PopularLocCat(BaseModel):
         return df.explode("recs").rename({"recs": "node"})
 
 
-def get_popular(df, eval_users):
-    popular_node = (
-        df.group_by("node")
-        .agg(pl.col("cookie").count())
-        .sort("cookie")
-        .tail(40)["node"]
-        .to_list()
-    )
-    df_pred_pop = pl.DataFrame(
-        {"node": [popular_node for i in range(len(eval_users))], "cookie": eval_users}
-    )
-    df_pred_pop = df_pred_pop.explode("node")
-    return df_pred_pop
+class Popular(BaseModel):
+    def fit(self, df_train):
+        self.popular_nodes = (
+            df_train.group_by("node")
+            .agg(pl.col("cookie").count())
+            .sort("cookie")
+            .tail(40)["node"]
+            .to_list()
+        )
+
+    def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
+        df_pred_pop = pl.DataFrame(
+            {"node": [self.popular_nodes for i in range(len(user_to_pred))], "cookie": user_to_pred}
+        )
+        return df_pred_pop.explode("node")

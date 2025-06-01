@@ -7,7 +7,7 @@ from utils import get_data, recall_at, make_pred_df
 from models.implicit_model import ALSRecommender
 from models.tfidf_model import TfidfRecommender
 from models.lightfm_model import LightFMRecommender
-from models.popular import PopularLocCat
+from models.popular import PopularLocCat, Popular
 
 
 def main():
@@ -18,8 +18,8 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["als", "tfidf", "lightfm", "popular-loc-cat"],
-        help="Which model to run ('als', 'tfidf', 'lightfm', or 'popular-loc-cat').",
+        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular"],
+        help="Which model to run ('als', 'tfidf', 'lightfm', 'popular' or 'popular-loc-cat').",
     )
     parser.add_argument(
         "--submission",
@@ -70,6 +70,9 @@ def main():
     elif args.model == "popular-loc-cat":
         model = PopularLocCat(df_cat)
         model.fit(df_train)
+    elif args.model == "popular":
+        model = Popular()
+        model.fit(df_train)
     else:
         raise NotImplementedError(f"Model '{args.model}' is not implemented")
 
@@ -87,19 +90,19 @@ def main():
     print(f"Recall@{TOP_K} on eval: {recall:.4f}")
 
     # 4) optionally retrain on full data & write submission
-    if args.submission:
-        print("Retraining on full clickstream...")
-        model.fit(df_clickstream["cookie"], df_clickstream["node"], df_clickstream["event"], df_clickstream["week"])
+    # if args.submission:
+    #     print("Retraining on full clickstream...")
+    #     model.fit(df_clickstream["cookie"], df_clickstream["node"], df_clickstream["event"], df_clickstream["week"])
 
-        print(f"Generating top {TOP_K} for test users...")
-        test_users = df_test_users["cookie"].to_list()
-        submission_df = model.predict(test_users, N=TOP_K).select(["cookie", "node"])
+    #     print(f"Generating top {TOP_K} for test users...")
+    #     test_users = df_test_users["cookie"].to_list()
+    #     submission_df = model.predict(test_users, N=TOP_K).select(["cookie", "node"])
 
-        print(f"Writing submission to {args.submission} …")
-        submission_df.write_csv(args.submission)
-        print("Submission written.")
-    else:
-        print("No --submission provided; skipping retraining & submission step.")
+    #     print(f"Writing submission to {args.submission} …")
+    #     submission_df.write_csv(args.submission)
+    #     print("Submission written.")
+    # else:
+    #     print("No --submission provided; skipping retraining & submission step.")
 
     print("Done.")
 
