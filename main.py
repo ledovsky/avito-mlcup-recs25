@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 import argparse
 
+import polars as pl
+
 import wandb
+import wandb.wandb_run
 
 from utils import get_data, recall_at, make_pred_df
 from models.implicit_model import ALSRecommender
 from models.tfidf_model import TfidfRecommender
 from models.lightfm_model import LightFMRecommender
 from models.popular import PopularLocCat, Popular
+from models.base import BaseModel
 
 
 def main():
@@ -32,7 +36,6 @@ def main():
     # fixed number of recommendations
     TOP_K = 40
 
-
     # Start a new wandb run to track this script.
     run = wandb.init(
         # Set the wandb entity where your project will be logged (generally your team name).
@@ -46,35 +49,11 @@ def main():
     )
 
     # 1) load data
-    df_test_users, df_clickstream, df_cat, df_text, df_events, df_train, df_eval = get_data()
+    df_test_users, df_clickstream, df_cat, df_text, df_events, df_train, df_eval = (
+        get_data()
+    )
 
-    # 2) initialize model
-    if args.model == "als":
-        als_config = {
-            "do_dedupe": False,
-            "use_week_discount": False,
-            "filter_rare_events": False,
-            "contact_weight": 10,
-            "als_factors": 120,
-            "iterations": 20,
-        }
-        model = ALSRecommender(df_events, **als_config)
-        run.config.update(als_config)
-        model.fit(df_train)
-    elif args.model == "tfidf":
-        model = TfidfRecommender(df_events)
-        model.fit(df_train["cookie"], df_train["node"], df_train["event"], df_train["week"])
-    elif args.model == "lightfm":
-        model = LightFMRecommender(df_events)
-        model.fit(df_train["cookie"], df_train["node"], df_train["event"], df_train["week"])
-    elif args.model == "popular-loc-cat":
-        model = PopularLocCat(df_cat)
-        model.fit(df_train)
-    elif args.model == "popular":
-        model = Popular()
-        model.fit(df_train)
-    else:
-        raise NotImplementedError(f"Model '{args.model}' is not implemented")
+    model = fit(args.model, run, df_train, df_events, df_cat)
 
     # 3) fit on training split and evaluate
     print("Fitting on train split...")
@@ -107,6 +86,48 @@ def main():
     print("Done.")
 
     run.finish()
+
+
+def fit(
+    model_name: str,
+    run: wandb.wandb_run.Run,
+    df_train: pl.DataFrame,
+    df_events: pl.DataFrame,
+    df_cat: pl.DataFrame,
+) -> BaseModel:
+    # 2) initialize model
+    if model_name == "als":
+        als_config = {
+            "do_dedupe": False,
+            "use_week_discount": False,
+            "filter_rare_events": False,
+            "contact_weight": 10,
+            "als_factors": 120,
+            "iterations": 20,
+        }
+        model = ALSRecommender(df_events, **als_config)
+        run.config.update(als_config)
+        model.fit(df_train)
+    elif model_name == "tfidf":
+        model = TfidfRecommender(df_events)
+        model.fit(
+            df_train["cookie"], df_train["node"], df_train["event"], df_train["week"]
+        )
+    elif model_name == "lightfm":
+        model = LightFMRecommender(df_events)
+        model.fit(
+            df_train["cookie"], df_train["node"], df_train["event"], df_train["week"]
+        )
+    elif model_name == "popular-loc-cat":
+        model = PopularLocCat(df_cat)
+        model.fit(df_train)
+    elif model_name == "popular":
+        model = Popular()
+        model.fit(df_train)
+    else:
+        raise NotImplementedError(f"Model '{model_name}' is not implemented")
+
+    return model
 
 
 if __name__ == "__main__":
