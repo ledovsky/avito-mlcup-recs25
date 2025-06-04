@@ -15,3 +15,8 @@ def test_popular():
     df_train, df_cat, df_events = get_test_data()
     run = wandb.init(mode="disabled")
     fit("popular", run, df_train, df_events, df_cat)
+
+def test_als():
+    df_train, df_cat, df_events = get_test_data()
+    run = wandb.init(mode="disabled")
+    fit("als", run, df_train, df_events, df_cat)
