@@ -12,6 +12,7 @@ from models.tfidf_model import TfidfRecommender
 from models.lightfm_model import LightFMRecommender
 from models.popular import PopularLocCat, Popular
 from models.base import BaseModel
+from ranker.ranker import Ranker
 
 
 def main():
@@ -24,12 +25,6 @@ def main():
         required=True,
         choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular"],
         help="Which model to run ('als', 'tfidf', 'lightfm', 'popular' or 'popular-loc-cat').",
-    )
-    parser.add_argument(
-        "--submission",
-        type=str,
-        default=None,
-        help="Path to write the final submission CSV. If omitted, skips retraining & submission.",
     )
     args = parser.parse_args()
 
@@ -58,8 +53,8 @@ def main():
     # 3) fit on training split and evaluate
     print("Fitting on train split...")
 
-    print(f"Generating top {TOP_K} predictions on eval split...")
-    eval_preds = model.predict(df_eval["cookie"].to_list(), N=TOP_K)
+    print(f"Generating top {TOP_K} predictions on eval split with ranker...")
+    eval_preds = fit_ranker(model, df_clickstream, df_cat, df_train, df_eval, TOP_K)
 
     pred_df = make_pred_df(df_train, df_eval, eval_preds)
     pred_df.write_csv(f"pred_{run.name}.csv")
@@ -67,21 +62,6 @@ def main():
     recall = recall_at(df_eval, eval_preds, k=TOP_K)
     run.summary["Recall@{TOP_K}"] = recall
     print(f"Recall@{TOP_K} on eval: {recall:.4f}")
-
-    # 4) optionally retrain on full data & write submission
-    # if args.submission:
-    #     print("Retraining on full clickstream...")
-    #     model.fit(df_clickstream["cookie"], df_clickstream["node"], df_clickstream["event"], df_clickstream["week"])
-
-    #     print(f"Generating top {TOP_K} for test users...")
-    #     test_users = df_test_users["cookie"].to_list()
-    #     submission_df = model.predict(test_users, N=TOP_K).select(["cookie", "node"])
-
-    #     print(f"Writing submission to {args.submission} …")
-    #     submission_df.write_csv(args.submission)
-    #     print("Submission written.")
-    # else:
-    #     print("No --submission provided; skipping retraining & submission step.")
 
     print("Done.")
 
@@ -102,12 +82,12 @@ def fit(
             "use_week_discount": False,
             "filter_rare_events": False,
             "contact_weight": 10,
-            "als_factors": 120,
-            "iterations": 20,
+            "als_factors": 60,
+            "iterations": 10,
         }
-        model = ALSRecommender(df_events, **als_config)
+        model = ALSRecommender(**als_config)
         run.config.update(als_config)
-        model.fit(df_train)
+        model.fit(df_train, df_events)
     elif model_name == "tfidf":
         model = TfidfRecommender(df_events)
         model.fit(
@@ -129,6 +109,28 @@ def fit(
 
     return model
 
+
+def fit_ranker(
+    model: BaseModel,
+    df_clickstream: pl.DataFrame,
+    df_cat: pl.DataFrame,
+    df_train: pl.DataFrame,
+    df_eval: pl.DataFrame,
+    N: int,
+) -> pl.DataFrame:
+    """Train a per-user ranker on model predictions and generate final eval predictions."""
+    # Generate base predictions on training split
+    train_cookies = df_train["cookie"].sample(10_000).to_list()
+    df_pred_train = model.predict(train_cookies, N=40)
+    # Initialize and train ranker
+    ranker = Ranker(df_clickstream, df_cat)
+    ranker.fit(df_pred_train)
+    # Generate base predictions on evaluation split
+    eval_cookies = df_eval["cookie"].to_list()
+    df_pred_eval_base = model.predict(eval_cookies, N=3*N)
+    # Apply ranker to evaluation predictions
+    df_pred_eval = ranker.predict(df_pred_eval_base)
+    return df_pred_eval
 
 if __name__ == "__main__":
     main()

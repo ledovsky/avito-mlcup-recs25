@@ -1,8 +1,20 @@
+from typing import Self
+
 import polars as pl
 from scipy.sparse import csr_matrix
 
 
 class BaseModel:
+    def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
+        raise NotImplementedError()
+
+    def save(self, path: str) -> None:
+        raise NotImplementedError()
+
+    @classmethod
+    def load(cls, path: str) -> Self:
+        raise NotImplementedError()
+
     def filter_rare_events(self, df_train: pl.DataFrame, thr=3) -> pl.DataFrame:
         return (
             df_train.group_by(["cookie", "node"])

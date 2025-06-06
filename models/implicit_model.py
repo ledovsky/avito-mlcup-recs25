@@ -1,7 +1,11 @@
+from typing import Self
+
+import implicit
+import numpy as np
 import polars as pl
 from scipy.sparse import csr_matrix
-import numpy as np
-import implicit
+import joblib
+
 from .base import BaseModel
 
 
@@ -12,13 +16,12 @@ class ALSRecommender(BaseModel):
 
     def __init__(
         self,
-        df_events: pl.DataFrame,
-        do_dedupe: bool,
-        use_week_discount: bool,
-        filter_rare_events: bool,
-        contact_weight: int,
-        als_factors: int,
-        iterations: int,
+        do_dedupe: bool = False,
+        use_week_discount: bool = False,
+        filter_rare_events: bool = False,
+        contact_weight: int = 10,
+        als_factors: int = 60,
+        iterations: int = 10,
         top_k_items: int | None = None,
     ):
         # coniguration
@@ -30,11 +33,7 @@ class ALSRecommender(BaseModel):
         self.use_week_discount = use_week_discount
         self.filter_rare_events = filter_rare_events
 
-        self.event_weights = {
-            row["event"]: contact_weight if row["is_contact"] else 1
-            for row in df_events.select(["event", "is_contact"]).to_dicts()
-        }
-
+        self.contact_weight = contact_weight
         self.model = None
         self.user_id_to_index = {}
         self.item_id_to_index = {}
@@ -42,7 +41,12 @@ class ALSRecommender(BaseModel):
         self.sparse_matrix = None
         self.top_k_items = top_k_items
 
-    def fit(self, df_train: pl.DataFrame) -> None:
+    def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
+        event_weights = {
+            row["event"]: self.contact_weight if row["is_contact"] else 1
+            for row in df_events.select(["event", "is_contact"]).to_dicts()
+        }
+
         if self.filter_rare_events:
             df_train = self.filter_rare_events(df_train)
 
@@ -58,7 +62,7 @@ class ALSRecommender(BaseModel):
             self.sparse_matrix,
         ) = self.build_interaction_matrix(
             df_train,
-            event_weights=self.event_weights,
+            event_weights=event_weights,
             use_week_discount=self.use_week_discount,
         )
 
@@ -93,3 +97,10 @@ class ALSRecommender(BaseModel):
             }
         )
         return df_pred.explode(["node", "scores"])
+
+    def save(self, path: str) -> None:
+        joblib.dump(self, path)
+
+    @classmethod
+    def load(cls, path: str) -> Self:
+        return joblib.load(path)
