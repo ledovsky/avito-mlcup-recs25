@@ -1,5 +1,7 @@
 from typing import Self
 
+import wandb
+import wandb.wandb_run
 import implicit
 import numpy as np
 import polars as pl
@@ -16,6 +18,7 @@ class ALSRecommender(BaseModel):
 
     def __init__(
         self,
+        run: wandb.wandb_run.Run,
         do_dedupe: bool = False,
         use_week_discount: bool = False,
         filter_rare_events: bool = False,
@@ -28,10 +31,12 @@ class ALSRecommender(BaseModel):
         self.als_kwargs = {
             "factors": als_factors,
             "iterations": iterations,
+            "calculate_training_loss": True
         }
         self.do_dedupe = do_dedupe
         self.use_week_discount = use_week_discount
         self.filter_rare_events = filter_rare_events
+        self.run = run
 
         self.contact_weight = contact_weight
         self.model = None
@@ -40,6 +45,7 @@ class ALSRecommender(BaseModel):
         self.index_to_item_id = {}
         self.sparse_matrix = None
         self.top_k_items = top_k_items
+        self.loss_ar: list[float] = []
 
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
         event_weights = {
@@ -53,7 +59,8 @@ class ALSRecommender(BaseModel):
         if self.do_dedupe:
             df_train = self.dedupe(df_train)
 
-        df_train = self.filter_top_k_items(df_train, self.top_k_items)
+        if self.top_k_items:
+            df_train = self.filter_top_k_items(df_train, self.top_k_items)
 
         (
             self.user_id_to_index,
@@ -66,8 +73,12 @@ class ALSRecommender(BaseModel):
             use_week_discount=self.use_week_discount,
         )
 
+        def callback(iteration: int, elapsed: float, loss: float):
+            self.loss_ar.append(loss)
+            self.run.log({"loss": loss}, step=iteration)
+
         self.model = implicit.als.AlternatingLeastSquares(**self.als_kwargs)
-        self.model.fit(self.sparse_matrix)
+        self.model.fit(self.sparse_matrix, callback=callback)
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:

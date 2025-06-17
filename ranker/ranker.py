@@ -21,11 +21,36 @@ class Ranker:
         if catboost_params:
             params.update(catboost_params)
         self.model = CatBoostRanker(**params)
+        
+    def prepare_dataset(self, df_pred: pl.DataFrame) -> pl.DataFrame:
+        """Prepare a dataset for training the ranker.
+        
+        This method enriches the candidate generation predictions with features
+        and adds a target column based on whether the user actually interacted
+        with the recommended item.
+        
+        Args:
+            df_pred: DataFrame with candidate generation predictions
+                     (columns: cookie, node, score)
+                     
+        Returns:
+            DataFrame with features for ranking and a target column
+        """
+        # Enrich predictions with features
+        df_enriched = enrich(df_pred, self.df_clickstream, self.df_cat)
+        
+        # Add target column (1 if user interacted with item, 0 otherwise)
+        df_enriched = add_target(df_enriched, self.df_clickstream)
+        
+        return df_enriched
 
     def fit(self, df_pred: pl.DataFrame) -> None:
         # prepare training data with target
-        df_train = enrich(df_pred, self.df_clickstream, self.df_cat)
-        df_train = add_target(df_train, self.df_clickstream)
+        if "target" not in df_pred.columns:
+            df_train = self.prepare_dataset(df_pred)
+        else:
+            df_train = df_pred
+            
         # ensure queryIds are grouped for CatBoostRanker
         df_train = df_train.sort("user_id")
         y = df_train["target"].to_list()

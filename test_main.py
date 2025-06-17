@@ -1,8 +1,8 @@
 import polars as pl
+
 import wandb
+from main import fit_model, initialize_model
 
-
-from main import fit
 
 def get_test_data():
     df_train = pl.read_parquet("./test_data/train.pq")
@@ -14,9 +14,12 @@ def get_test_data():
 def test_popular():
     df_train, df_cat, df_events = get_test_data()
     run = wandb.init(mode="disabled")
-    fit("popular", run, df_train, df_events, df_cat)
+    model = initialize_model("popular", run, df_events, df_cat)
+    fit_model(model, "popular", df_train, df_events)
+
 
 def test_als():
     df_train, df_cat, df_events = get_test_data()
     run = wandb.init(mode="disabled")
-    fit("als", run, df_train, df_events, df_cat)
+    model = initialize_model("als", run, df_events, df_cat)
+    fit_model(model, "als", df_train, df_events)

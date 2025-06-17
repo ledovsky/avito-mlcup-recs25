@@ -1,5 +1,35 @@
 import polars as pl
 from datetime import timedelta
+import time
+
+class TimeTracker:
+    def __init__(self, wandb_run=None):
+        self.timings = {}
+        self.start_times = {}
+        self.wandb_run = wandb_run
+    
+    def start(self, step_name):
+        """Start timing a step"""
+        self.start_times[step_name] = time.time()
+        
+    def stop(self, step_name):
+        """Stop timing a step and record the elapsed time"""
+        if step_name in self.start_times:
+            elapsed = time.time() - self.start_times[step_name]
+            self.timings[step_name] = elapsed
+            print(f"{step_name}: {elapsed:.2f}s")
+            
+            # Log to wandb if available
+            if self.wandb_run:
+                self.wandb_run.summary[f"time_{step_name}"] = elapsed
+            
+            return elapsed
+        return None
+    
+    def print_total(self):
+        """Print only the total time of all recorded steps"""
+        total = sum(self.timings.values())
+        print(f"Total time: {total:.2f}s")
 
 
 def get_data(data_dir="./data"):

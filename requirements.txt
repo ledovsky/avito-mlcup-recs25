@@ -5,6 +5,7 @@ isoduration==20.11.0
 jsonpointer==3.0.0
 jupyter==1.1.1
 lightfm==1.17
+mypy==1.7.1
 pip-chill==1.0.3
 polars==1.29.0
 tinycss2==1.4.0

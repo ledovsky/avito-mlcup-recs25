@@ -1,5 +1,6 @@
 from typing import Self
 
+import joblib
 import polars as pl
 from scipy.sparse import csr_matrix
 
@@ -9,11 +10,11 @@ class BaseModel:
         raise NotImplementedError()
 
     def save(self, path: str) -> None:
-        raise NotImplementedError()
+        joblib.dump(self, path)
 
     @classmethod
     def load(cls, path: str) -> Self:
-        raise NotImplementedError()
+        return joblib.load(path)
 
     def filter_rare_events(self, df_train: pl.DataFrame, thr=3) -> pl.DataFrame:
         return (
@@ -31,10 +32,8 @@ class BaseModel:
         ).unique(subset=["cookie", "node"])
 
     def filter_top_k_items(
-        self, df: pl.DataFrame, top_k_items: int | None
+        self, df: pl.DataFrame, top_k_items: int
     ) -> pl.DataFrame:
-        if top_k_items is None:
-            return df
         top_items = (
             df["node"]
             .value_counts()
