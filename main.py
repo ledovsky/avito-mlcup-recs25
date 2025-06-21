@@ -274,14 +274,19 @@ def initialize_model(
             "contact_weight": 10,
             "als_factors": 120,
             "iterations": 10,
-            "top_k_items": 40,
+            "top_k_items": 40_000,
         }
         run.config.update(als_config)
         return ALSRecommender(run, **als_config)
     elif model_name == "tfidf":
         return TfidfRecommender(df_events)
     elif model_name == "lightfm":
-        return LightFMRecommender(df_events)
+        lightfm_config = {
+            "top_k_items": 40_000,
+            "loss": "bpr",
+            "no_components": 30,
+        }
+        return LightFMRecommender(run, **lightfm_config)
     elif model_name == "popular-loc-cat":
         return PopularLocCat(df_cat)
     elif model_name == "popular":
@@ -294,9 +299,9 @@ def fit_model(
     model: BaseModel, model_name: str, df_train: pl.DataFrame, df_events: pl.DataFrame
 ) -> None:
     """Fit a model based on the model name"""
-    if model_name == "als":
+    if model_name in ["als", "lightfm"]:
         model.fit(df_train, df_events)
-    elif model_name in ["tfidf", "lightfm"]:
+    elif model_name in ["tfidf"]:
         model.fit(
             df_train["cookie"], df_train["node"], df_train["event"], df_train["week"]
         )

@@ -27,6 +27,7 @@ class ALSRecommender(BaseModel):
         iterations: int = 10,
         top_k_items: int | None = None,
     ):
+        super().__init__()
         # coniguration
         self.als_kwargs = {
             "factors": als_factors,
@@ -35,15 +36,11 @@ class ALSRecommender(BaseModel):
         }
         self.do_dedupe = do_dedupe
         self.use_week_discount = use_week_discount
-        self.filter_rare_events = filter_rare_events
+        self.flag_filter_rare_events = filter_rare_events
         self.run = run
 
         self.contact_weight = contact_weight
-        self.model = None
-        self.user_id_to_index = {}
-        self.item_id_to_index = {}
-        self.index_to_item_id = {}
-        self.sparse_matrix = None
+        self.model: implicit.als.AlternatingLeastSquares = None
         self.top_k_items = top_k_items
         self.loss_ar: list[float] = []
 
@@ -53,7 +50,7 @@ class ALSRecommender(BaseModel):
             for row in df_events.select(["event", "is_contact"]).to_dicts()
         }
 
-        if self.filter_rare_events:
+        if self.flag_filter_rare_events:
             df_train = self.filter_rare_events(df_train)
 
         if self.do_dedupe:
@@ -62,12 +59,12 @@ class ALSRecommender(BaseModel):
         if self.top_k_items:
             df_train = self.filter_top_k_items(df_train, self.top_k_items)
 
-        (
-            self.user_id_to_index,
-            self.item_id_to_index,
-            self.index_to_item_id,
-            self.sparse_matrix,
-        ) = self.build_interaction_matrix(
+        # Fill
+        # self.user_id_to_index,
+        # self.item_id_to_index,
+        # self.index_to_item_id,
+        # self.sparse_matrix,
+        self.build_interaction_matrix(
             df_train,
             event_weights=event_weights,
             use_week_discount=self.use_week_discount,

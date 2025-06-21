@@ -1,69 +1,77 @@
-import polars as pl
-from scipy.sparse import csr_matrix
-import numpy as np
-import faiss
 import random
-from sklearn.metrics import roc_auc_score
+
+import faiss
+import numpy as np
+import polars as pl
 from lightfm import LightFM
 from lightfm.evaluation import auc_score, recall_at_k
+from scipy.sparse import csr_matrix
+from sklearn.metrics import roc_auc_score
+
+import wandb
+import wandb.wandb_run
+
+from .base import BaseModel
 
 
-class LightFMRecommender:
+class LightFMRecommender(BaseModel):
     """
     LightFM-based recommender using LightFM library.
     """
 
-    def __init__(self, df_events: pl.DataFrame):
-        self.lfm_init_kwargs = {
-            "no_components": 30,
-            "loss": "bpr",
-        }
-        self.lfm_fit_kwargs = {
-            "num_threads": 8,
-        }
+    def __init__(
+        self,
+        run: wandb.wandb_run.Run,
+        top_k_items: int | None = None,
+        no_components: int = 30,
+        contact_weight: int = 10,
+        loss: str = "bpr",
+    ) -> None:
+
+        super().__init__()
         self.epochs = 5
-        self.event_weights = {
-            row["event"]: 4 if row["is_contact"] else 1
+
+        self.top_k_items = top_k_items
+        self.no_components = no_components
+        self.contact_weight = contact_weight
+        self.loss = loss
+        self.model: LightFM = None
+
+    def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
+        event_weights = {
+            row["event"]: self.contact_weight if row["is_contact"] else 1
             for row in df_events.select(["event", "is_contact"]).to_dicts()
         }
+        if self.top_k_items:
+            df_train = self.filter_top_k_items(df_train, self.top_k_items)
 
-        self.model = None
-        self.user_id_to_index = {}
-        self.item_id_to_index = {}
-        self.index_to_item_id = {}
-        self.sparse_matrix = None
+        # Fill
+        # self.user_id_to_index,
+        # self.item_id_to_index,
+        # self.index_to_item_id,
+        # self.sparse_matrix,
 
-    def fit(
-        self, users: pl.Series, nodes: pl.Series, events: pl.Series, weeks=None
-    ) -> None:
-        user_ids = users.unique().to_list()
-        item_ids = nodes.unique().to_list()
-
-        self.user_id_to_index = {user_id: idx for idx, user_id in enumerate(user_ids)}
-        self.item_id_to_index = {item_id: idx for idx, item_id in enumerate(item_ids)}
-        self.index_to_item_id = {v: k for k, v in self.item_id_to_index.items()}
-
-        rows = users.replace_strict(self.user_id_to_index).to_list()
-        cols = nodes.replace_strict(self.item_id_to_index).to_list()
-        values = [self.event_weights.get(ev, 1) for ev in events.to_list()]
-
-        self.sparse_matrix = csr_matrix(
-            (values, (rows, cols)), shape=(len(user_ids), len(item_ids))
+        self.build_interaction_matrix(
+            df_train,
+            event_weights=event_weights,
+            use_week_discount=False,
         )
+
+        user_ids = df_train["cookie"].unique().to_list()
+        item_ids = df_train["node"].unique().to_list()
+        val_users = random.sample(user_ids, min(100, len(user_ids)))
 
         # Initialize and train LightFM model with partial fit and loss logging
         # prepare validation dataset
-        val_users = random.sample(user_ids, min(100, len(user_ids)))
         # map each val_user to positive and negative items
-        df_inter = pl.DataFrame({"user": users, "item": nodes})
         user_groups = (
-            df_inter.filter(pl.col("user").is_in(val_users))
-            .group_by("user")
-            .agg(pl.col("item").unique().alias("pos_items"))
+            df_train.filter(pl.col("cookie").is_in(val_users))
+            .group_by("cookie")
+            .agg(pl.col("node").unique().alias("pos_items"))
             .to_dicts()
         )
         self._val_data = {
-            row["user"]: {
+            row["cookie"]: {
                 "pos": row["pos_items"],
                 "neg": random.sample(
                     list(set(item_ids) - set(row["pos_items"])), len(row["pos_items"])
@@ -72,12 +80,12 @@ class LightFMRecommender:
             for row in user_groups
         }
 
-        self.model = LightFM(**self.lfm_init_kwargs)
+        self.model = LightFM(no_components=self.no_components, loss=self.loss)
+
         for epoch in range(1, self.epochs + 1):
             self.model.fit_partial(
                 self.sparse_matrix,
                 epochs=1,
-                **self.lfm_fit_kwargs,
             )
             # compute validation ROC AUC
             y_true, y_score = [], []
@@ -112,7 +120,7 @@ class LightFMRecommender:
 
         valid_users = [u for u in user_to_pred if u in self.user_id_to_index]
         if not valid_users:
-            return pl.DataFrame(columns=["cookie", "node", "scores"])
+            raise ValueError("No valid users")
 
         # retrieve user embeddings and item embeddings
         user_indices = np.array([self.user_id_to_index[u] for u in valid_users])

@@ -6,6 +6,12 @@ from scipy.sparse import csr_matrix
 
 
 class BaseModel:
+    def __init__(self) -> None:
+        self.user_id_to_index: dict[str, int] = {}
+        self.item_id_to_index: dict[int, int] = {}
+        self.index_to_item_id: dict[int, int] = {}
+        self.sparse_matrix: csr_matrix = None
+
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         raise NotImplementedError()
 
@@ -49,16 +55,22 @@ class BaseModel:
         event_col: str = "event",
         event_weights: dict | None = None,
         use_week_discount: bool = False,
-    ) -> tuple[dict, dict, dict, csr_matrix]:
+    ) -> None:
+        """Fills:
+        - self.user_id_to_index,
+        - self.item_id_to_index,
+        - self.index_to_item_id,
+        - self.sparse_matrix,
+        """
         users = df["cookie"].unique().to_list()
         items = df["node"].unique().to_list()
         items = df["node"].unique().to_list()
-        user_to_idx = {u: i for i, u in enumerate(users)}
-        item_to_idx = {j: i for i, j in enumerate(items)}
-        idx_to_item = {i: j for j, i in item_to_idx.items()}
+        self.user_id_to_index = {u: i for i, u in enumerate(users)}
+        self.item_id_to_index = {j: i for i, j in enumerate(items)}
+        self.index_to_item_id = {i: j for j, i in self.item_id_to_index.items()}
 
-        rows = df["cookie"].replace_strict(user_to_idx).to_list()
-        cols = df["node"].replace_strict(item_to_idx).to_list()
+        rows = df["cookie"].replace_strict(self.user_id_to_index).to_list()
+        cols = df["node"].replace_strict(self.item_id_to_index).to_list()
         base_vals = (
             [event_weights.get(ev, 1) for ev in df[event_col].to_list()]
             if event_weights
@@ -72,5 +84,4 @@ class BaseModel:
         else:
             values = base_vals
 
-        mat = csr_matrix((values, (rows, cols)), shape=(len(users), len(items)))
-        return user_to_idx, item_to_idx, idx_to_item, mat
+        self.sparse_matrix = csr_matrix((values, (rows, cols)), shape=(len(users), len(items)))

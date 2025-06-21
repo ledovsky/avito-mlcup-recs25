@@ -23,3 +23,10 @@ def test_als():
     run = wandb.init(mode="disabled")
     model = initialize_model("als", run, df_events, df_cat)
     fit_model(model, "als", df_train, df_events)
+
+
+def test_lightfm():
+    df_train, df_cat, df_events = get_test_data()
+    run = wandb.init(mode="disabled")
+    model = initialize_model("lightfm", run, df_events, df_cat)
+    fit_model(model, "lightfm", df_train, df_events)
