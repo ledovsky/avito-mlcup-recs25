@@ -274,6 +274,7 @@ def initialize_model(
             "contact_weight": 10,
             "als_factors": 120,
             "iterations": 10,
+            "top_k_items": 40,
         }
         run.config.update(als_config)
         return ALSRecommender(run, **als_config)

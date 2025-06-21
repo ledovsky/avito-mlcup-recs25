@@ -37,7 +37,7 @@ class BaseModel:
         top_items = (
             df["node"]
             .value_counts()
-            .sort("counts", descending=True)
+            .sort("count", descending=True)
             .head(top_k_items)["node"]
             .to_list()
         )
