@@ -13,6 +13,7 @@ from models.implicit_model import ALSRecommender
 from models.lightfm_model import LightFMRecommender
 from models.popular import Popular, PopularLocCat
 from models.tfidf_model import TfidfRecommender
+from models.pytorch_emb import TorchEmbModel
 from ranker.ranker import Ranker
 from utils import TimeTracker, get_data, make_pred_df, recall_at
 
@@ -35,8 +36,8 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular"],
-        help="Which model to run ('als', 'tfidf', 'lightfm', 'popular' or 'popular-loc-cat').",
+        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular", "torch-emb"],
+        help="Which model to run ('als', 'tfidf', 'lightfm', 'popular', 'popular-loc-cat' or 'torch-emb').",
     )
     train_candgen_parser.add_argument(
         "--save-path",
@@ -59,7 +60,7 @@ def main():
         "--model-type",
         type=str,
         required=True,
-        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular"],
+        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular", "torch-emb"],
         help="Type of the pretrained model",
     )
     create_ranking_dataset_parser.add_argument(
@@ -83,7 +84,7 @@ def main():
         "--candgen-model-type",
         type=str,
         required=True,
-        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular"],
+        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular", "torch-emb"],
         help="Type of the pretrained candidate generation model",
     )
     train_ranker_parser.add_argument(
@@ -289,6 +290,8 @@ def initialize_model(
         return LightFMRecommender(run, **lightfm_config)
     elif model_name == "popular-loc-cat":
         return PopularLocCat(df_cat)
+    elif model_name == "torch-emb":
+        return TorchEmbModel(run)
     elif model_name == "popular":
         return Popular()
     else:
@@ -329,6 +332,9 @@ def load_model(
         model = PopularLocCat(df_cat)
         # Assuming PopularLocCat has a load method
         return model.load(model_path)
+    elif model_type == "torch-emb":
+        # Load TorchEmbModel with torch.load
+        return TorchEmbModel.load(model_path)
     elif model_type == "popular":
         model = Popular()
         # Assuming Popular has a load method
