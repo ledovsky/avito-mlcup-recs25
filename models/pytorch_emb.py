@@ -84,14 +84,26 @@ class TorchEmbModel(BaseTorchModel):
                 user_emb = self.user_embeddings(batch_users)
                 pos_item_emb = self.item_embeddings(batch_items)
 
-                # compute positive and negative losses separately
+                # compute positive loss
                 pos_labels = torch.ones(len(batch_users), device=self.device)
-                neg_labels = -torch.ones(len(batch_users) * len(batch_items), device=self.device)
-
                 pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels)
-                expanded_user = user_emb.unsqueeze(1).expand(-1, len(batch_items), -1).reshape(-1, self.embedding_dim)
-                expanded_neg = pos_item_emb.unsqueeze(0).expand(len(batch_users), -1, -1).reshape(-1, self.embedding_dim)
-                neg_loss = loss_fn(expanded_user, expanded_neg, neg_labels)
+
+                # in-batch negatives: sample k negatives per positive
+                k = 10
+                B = len(batch_users)
+                # shape (B, B, D)
+                expanded_user_mat = user_emb.unsqueeze(1).expand(-1, B, -1)
+                expanded_item_mat = pos_item_emb.unsqueeze(0).expand(B, -1, -1)
+                # mask out positive pairs
+                mask = ~torch.eye(B, dtype=torch.bool, device=self.device)
+                neg_user_all = expanded_user_mat[mask].reshape(B, B-1, self.embedding_dim)
+                neg_item_all = expanded_item_mat[mask].reshape(B, B-1, self.embedding_dim)
+                # sample k negatives per positive
+                idx = torch.randperm(B-1, device=self.device)[:k]
+                sampled_user = neg_user_all[:, idx, :].reshape(-1, self.embedding_dim)
+                sampled_neg = neg_item_all[:, idx, :].reshape(-1, self.embedding_dim)
+                neg_labels = -torch.ones(B * k, device=self.device)
+                neg_loss = loss_fn(sampled_user, sampled_neg, neg_labels)
 
                 loss = pos_loss + self.alpha * neg_loss
                 optimizer.zero_grad()
