@@ -30,6 +30,7 @@ class TorchEmbModel(BaseTorchModel):
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.seen_items: dict[int, set[int]] = {}
 
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
         users = df_train["cookie"].unique().to_list()
@@ -58,6 +59,11 @@ class TorchEmbModel(BaseTorchModel):
             [self.item_id_to_index[i] for i in df_train["node"].to_list()],
             dtype=torch.long,
         )
+
+        # record seen items per user for filtering during prediction
+        self.seen_items = {}
+        for u_idx, i_idx in zip(user_indices.tolist(), item_indices.tolist()):
+            self.seen_items.setdefault(u_idx, set()).add(i_idx)
 
         dataset = torch.utils.data.TensorDataset(user_indices, item_indices)
         dataloader = torch.utils.data.DataLoader(
@@ -108,8 +114,14 @@ class TorchEmbModel(BaseTorchModel):
             u_idx = self.user_id_to_index[u]
             u_emb = self.user_embeddings.weight[u_idx].detach().cpu().numpy().reshape(1, -1)
             faiss.normalize_L2(u_emb)
-            _, I = index.search(u_emb, N)
-            top_items = [self.index_to_item_id[i] for i in I[0]]
+            # search for more items to account for seen ones
+            search_k = N + len(self.seen_items.get(u_idx, set()))
+            _, I = index.search(u_emb, search_k)
+            seen = self.seen_items.get(u_idx, set())
+            # filter out seen item indices
+            filtered = [i for i in I[0] if i not in seen]
+            top_idxs = filtered[:N]
+            top_items = [self.index_to_item_id[i] for i in top_idxs]
             results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items}))
 
         return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": []})
