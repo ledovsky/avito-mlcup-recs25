@@ -18,6 +18,7 @@ class TorchEmbModel(BaseTorchModel):
         epochs: int = 5,
         batch_size: int = 1024,
         lr: float = 1e-3,
+        alpha: float = 0.1,
     ):
         super().__init__()
         self.run = run
@@ -25,6 +26,7 @@ class TorchEmbModel(BaseTorchModel):
         self.epochs = epochs
         self.batch_size = batch_size
         self.lr = lr
+        self.alpha = alpha
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -46,7 +48,7 @@ class TorchEmbModel(BaseTorchModel):
             list(self.user_embeddings.parameters()) + list(self.item_embeddings.parameters()),
             lr=self.lr,
         )
-        loss_fn = nn.CosineEmbeddingLoss()
+        loss_fn = nn.CosineEmbeddingLoss(reduction="mean")
 
         user_indices = torch.tensor(
             [self.user_id_to_index[u] for u in df_train["cookie"].to_list()],
@@ -75,13 +77,12 @@ class TorchEmbModel(BaseTorchModel):
                 pos_labels = torch.ones(len(batch_users), device=self.device)
                 neg_labels = -torch.ones(len(batch_users) * len(batch_items), device=self.device)
 
-                pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels, reduction="mean")
+                pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels)
                 expanded_user = user_emb.unsqueeze(1).expand(-1, len(batch_items), -1).reshape(-1, self.embedding_dim)
                 expanded_neg = pos_item_emb.unsqueeze(0).expand(len(batch_users), -1, -1).reshape(-1, self.embedding_dim)
-                neg_loss = loss_fn(expanded_user, expanded_neg, neg_labels, reduction="mean")
+                neg_loss = loss_fn(expanded_user, expanded_neg, neg_labels)
 
-                alpha = 0.1
-                loss = pos_loss + alpha * neg_loss
+                loss = pos_loss + self.alpha * neg_loss
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
