@@ -3,6 +3,7 @@ from typing import Self
 import joblib
 import polars as pl
 from scipy.sparse import csr_matrix
+import torch
 
 
 class BaseModel:
@@ -16,11 +17,11 @@ class BaseModel:
         raise NotImplementedError()
 
     def save(self, path: str) -> None:
-        joblib.dump(self, path)
+        torch.save(self, path)
 
     @classmethod
     def load(cls, path: str) -> Self:
-        return joblib.load(path)
+        return torch.load(path)
 
     def filter_rare_events(self, df_train: pl.DataFrame, thr=3) -> pl.DataFrame:
         return (
@@ -85,3 +86,12 @@ class BaseModel:
             values = base_vals
 
         self.sparse_matrix = csr_matrix((values, (rows, cols)), shape=(len(users), len(items)))
+
+
+class BaseTorchModel(BaseModel):
+    def save(self, path: str) -> None:
+        joblib.dump(self, path)
+
+    @classmethod
+    def load(cls, path: str) -> Self:
+        return joblib.load(path)
