@@ -30,7 +30,11 @@ class TorchEmbModel(BaseTorchModel):
         self.alpha = alpha
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() 
+            else "mps" if torch.backends.mps.is_available() 
+            else "cpu"
+        )
         self.seen_items: dict[int, set[int]] = {}
 
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
