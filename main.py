@@ -291,7 +291,15 @@ def initialize_model(
     elif model_name == "popular-loc-cat":
         return PopularLocCat(df_cat)
     elif model_name == "torch-emb":
-        return TorchEmbModel(run)
+        torchemb_config = {
+            "embedding_dim": 64,
+            "epochs": 5,
+            "batch_size": 1024,
+            "lr": 1e-3,
+            "alpha": 0.1,
+        }
+        run.config.update(torchemb_config)
+        return TorchEmbModel(run, **torchemb_config)
     elif model_name == "popular":
         return Popular()
     else:
