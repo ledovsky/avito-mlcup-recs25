@@ -299,7 +299,9 @@ def initialize_model(
             "alpha": 0.1,
         }
         run.config.update(torchemb_config)
-        return TorchEmbModel(run, **torchemb_config)
+        model = TorchEmbModel(run, **torchemb_config)
+        run.summary["device"] = str(model.device)
+        return model
     elif model_name == "popular":
         return Popular()
     else:
