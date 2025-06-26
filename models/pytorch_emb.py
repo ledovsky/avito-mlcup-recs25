@@ -116,12 +116,14 @@ class TorchEmbModel(BaseTorchModel):
             faiss.normalize_L2(u_emb)
             # search for more items to account for seen ones
             search_k = N + len(self.seen_items.get(u_idx, set()))
-            _, I = index.search(u_emb, search_k)
+            D, I = index.search(u_emb, search_k)
             seen = self.seen_items.get(u_idx, set())
             # filter out seen item indices
             filtered = [i for i in I[0] if i not in seen]
             top_idxs = filtered[:N]
             top_items = [self.index_to_item_id[i] for i in top_idxs]
-            results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items}))
+            # get corresponding scores
+            scores = [float(D[0][list(I[0]).index(i)]) for i in top_idxs]
+            results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items, "score": scores}))
 
-        return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": []})
+        return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": [], "score": []})
