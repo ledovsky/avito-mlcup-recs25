@@ -6,6 +6,7 @@ import wandb.wandb_run
 import polars as pl
 import faiss
 import torch.nn.functional as F
+from torch.profiler import profile, ProfilerActivity
 from tqdm import tqdm
 
 from .base import BaseTorchModel
@@ -76,8 +77,15 @@ class TorchEmbModel(BaseTorchModel):
             dataset, batch_size=self.batch_size, shuffle=True
         )
 
-        for epoch in range(self.epochs):
-            total_loss = 0.0
+        with profile(
+            activities=[ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if torch.cuda.is_available() else []),
+            schedule=torch.profiler.schedule(wait=0, warmup=0, active=10, repeat=999),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler"),
+            record_shapes=True,
+            with_stack=True
+        ) as prof:
+            for epoch in range(self.epochs):
+                total_loss = 0.0
             for batch_users, batch_items in tqdm(dataloader, desc=f"Epoch {epoch}"):
                 batch_users = batch_users.to(self.device)
                 batch_items = batch_items.to(self.device)
@@ -112,6 +120,7 @@ class TorchEmbModel(BaseTorchModel):
                 optimizer.step()
 
                 total_loss += loss.item()
+                prof.step()
 
             if self.run:
                 self.run.log({"epoch": epoch, "loss": total_loss})
