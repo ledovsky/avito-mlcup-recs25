@@ -302,7 +302,7 @@ def fit_model(
     model: BaseModel, model_name: str, df_train: pl.DataFrame, df_events: pl.DataFrame
 ) -> None:
     """Fit a model based on the model name"""
-    if model_name in ["als", "lightfm"]:
+    if model_name in ["als", "lightfm", "torch-emb"]:
         model.fit(df_train, df_events)
     elif model_name in ["tfidf"]:
         model.fit(
