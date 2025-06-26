@@ -35,6 +35,7 @@ class TorchEmbModel(BaseTorchModel):
             else "mps" if torch.backends.mps.is_available() 
             else "cpu"
         )
+        print(f"TorchEmbModel using device {self.device}")
         self.seen_items: dict[int, set[int]] = {}
 
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
