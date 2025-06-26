@@ -6,6 +6,7 @@ import wandb.wandb_run
 import polars as pl
 import faiss
 import torch.nn.functional as F
+from tqdm import tqdm
 
 from .base import BaseTorchModel
 
@@ -72,7 +73,7 @@ class TorchEmbModel(BaseTorchModel):
 
         for epoch in range(self.epochs):
             total_loss = 0.0
-            for batch_users, batch_items in dataloader:
+            for batch_users, batch_items in tqdm(dataloader, desc=f"Epoch {epoch}"):
                 batch_users = batch_users.to(self.device)
                 batch_items = batch_items.to(self.device)
 
