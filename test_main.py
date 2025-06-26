@@ -23,6 +23,8 @@ def test_als():
     run = wandb.init(mode="disabled")
     model = initialize_model("als", run, df_events, df_cat)
     fit_model(model, "als", df_train, df_events)
+    eval_cookies = df_train["cookie"].to_list()
+    model.predict(eval_cookies, N=40)
 
 
 def test_lightfm():
@@ -31,8 +33,11 @@ def test_lightfm():
     model = initialize_model("lightfm", run, df_events, df_cat)
     fit_model(model, "lightfm", df_train, df_events)
 
+
 def test_torch_emb():
     df_train, df_cat, df_events = get_test_data()
     run = wandb.init(mode="disabled")
     model = initialize_model("torch-emb", run, df_events, df_cat)
     fit_model(model, "torch-emb", df_train, df_events)
+    eval_cookies = df_train["cookie"].to_list()
+    model.predict(eval_cookies, N=40)

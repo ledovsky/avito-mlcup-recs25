@@ -17,11 +17,11 @@ class BaseModel:
         raise NotImplementedError()
 
     def save(self, path: str) -> None:
-        torch.save(self, path)
+        joblib.dump(self, path)
 
     @classmethod
     def load(cls, path: str) -> Self:
-        return torch.load(path)
+        return joblib.load(path)
 
     def filter_rare_events(self, df_train: pl.DataFrame, thr=3) -> pl.DataFrame:
         return (
@@ -90,8 +90,8 @@ class BaseModel:
 
 class BaseTorchModel(BaseModel):
     def save(self, path: str) -> None:
-        joblib.dump(self, path)
+        torch.save(self, path)
 
     @classmethod
     def load(cls, path: str) -> Self:
-        return joblib.load(path)
+        return torch.load(path)

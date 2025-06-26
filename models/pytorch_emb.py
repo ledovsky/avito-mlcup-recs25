@@ -124,6 +124,6 @@ class TorchEmbModel(BaseTorchModel):
             top_items = [self.index_to_item_id[i] for i in top_idxs]
             # get corresponding scores
             scores = [float(D[0][list(I[0]).index(i)]) for i in top_idxs]
-            results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items, "score": scores}))
+            results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items, "scores": scores}))
 
-        return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": [], "score": []})
+        return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": [], "scores": []})
