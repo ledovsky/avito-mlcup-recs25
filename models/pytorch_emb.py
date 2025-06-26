@@ -71,22 +71,17 @@ class TorchEmbModel(BaseTorchModel):
                 user_emb = self.user_embeddings(batch_users)
                 pos_item_emb = self.item_embeddings(batch_items)
 
-                # in-batch negatives: reuse pos_item_emb as negatives
-                labels = torch.cat([
-                    torch.ones(len(batch_users), device=self.device),
-                    -torch.ones(len(batch_users) * len(batch_items), device=self.device),
-                ])
+                # compute positive and negative losses separately
+                pos_labels = torch.ones(len(batch_users), device=self.device)
+                neg_labels = -torch.ones(len(batch_users) * len(batch_items), device=self.device)
 
-                pos_scores = F.cosine_similarity(user_emb, pos_item_emb)
+                pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels, reduction="mean")
                 expanded_user = user_emb.unsqueeze(1).expand(-1, len(batch_items), -1).reshape(-1, self.embedding_dim)
                 expanded_neg = pos_item_emb.unsqueeze(0).expand(len(batch_users), -1, -1).reshape(-1, self.embedding_dim)
-                neg_scores = F.cosine_similarity(expanded_user, expanded_neg)
+                neg_loss = loss_fn(expanded_user, expanded_neg, neg_labels, reduction="mean")
 
-                loss = loss_fn(
-                    torch.cat([user_emb, expanded_user], dim=0),
-                    torch.cat([pos_item_emb, expanded_neg], dim=0),
-                    labels,
-                )
+                alpha = 0.1
+                loss = pos_loss + alpha * neg_loss
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
