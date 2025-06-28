@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import wandb
 import wandb.wandb_run
+import numpy as np
 
 import polars as pl
 import faiss
@@ -31,6 +32,8 @@ class TorchEmbModel(BaseTorchModel):
         self.alpha = alpha
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
+        self.user_embeddings_np: np.typing.NDArray | None = None
+        self.item_embeddings_np: np.typing.NDArray | None = None
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() 
             else "mps" if torch.backends.mps.is_available() 
@@ -80,18 +83,18 @@ class TorchEmbModel(BaseTorchModel):
         with profile(
             activities=[ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if torch.cuda.is_available() else []),
             schedule=torch.profiler.schedule(wait=0, warmup=0, active=10, repeat=999),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler"),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler", worker_name="worker0"),
             record_shapes=True,
-            with_stack=True
+            with_stack=True,
+            profile_memory=True
         ) as prof:
             for epoch in range(self.epochs):
                 total_loss = 0.0
             iter = 0
-            print("here")
             for batch_users, batch_items in tqdm(dataloader, desc=f"Epoch {epoch}"):
                 iter += 1
-                if iter % 10 == 0:
-                    print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+                if iter > 50:
+                    break
                 with record_function("load_to_device"):
                     batch_users = batch_users.to(self.device)
                     batch_items = batch_items.to(self.device)
@@ -131,38 +134,40 @@ class TorchEmbModel(BaseTorchModel):
                     loss.backward()
                     optimizer.step()
 
-                total_loss += loss.item()
+                with record_function("add loss"):
+                    total_loss += loss.item()
+
                 prof.step()
 
             if self.run:
                 self.run.log({"epoch": epoch, "loss": total_loss})
 
-        self.user_embeddings = self.user_embeddings.cpu()
-        self.item_embeddings = self.item_embeddings.cpu()
+        self.user_embeddings_np = self.user_embeddings.weight.detach().cpu().numpy()
+        self.item_embeddings_np = self.item_embeddings.weight.detach().cpu().numpy()
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
-        item_matrix = self.item_embeddings.weight.detach().cpu().numpy()
+        item_matrix = self.item_embeddings_np
         faiss.normalize_L2(item_matrix)
         index = faiss.IndexFlatIP(self.embedding_dim)
         index.add(item_matrix)
 
         results = []
-        for u in user_to_pred:
-            if u not in self.user_id_to_index:
-                continue
-            u_idx = self.user_id_to_index[u]
-            u_emb = self.user_embeddings.weight[u_idx].detach().cpu().numpy().reshape(1, -1)
-            faiss.normalize_L2(u_emb)
-            # search for more items to account for seen ones
-            search_k = N + len(self.seen_items.get(u_idx, set()))
-            D, I = index.search(u_emb, search_k)
-            seen = self.seen_items.get(u_idx, set())
-            # filter out seen item indices
-            filtered = [i for i in I[0] if i not in seen]
-            top_idxs = filtered[:N]
-            top_items = [self.index_to_item_id[i] for i in top_idxs]
-            # get corresponding scores
-            scores = [float(D[0][list(I[0]).index(i)]) for i in top_idxs]
-            results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items, "scores": scores}))
+        # for u in user_to_pred:
+        #     if u not in self.user_id_to_index:
+        #         continue
+        #     u_idx = self.user_id_to_index[u]
+        #     u_emb = self.user_embeddings.weight[u_idx].detach().cpu().numpy().reshape(1, -1)
+        #     faiss.normalize_L2(u_emb)
+        #     # search for more items to account for seen ones
+        #     search_k = N + len(self.seen_items.get(u_idx, set()))
+        #     D, I = index.search(u_emb, search_k)
+        #     seen = self.seen_items.get(u_idx, set())
+        #     # filter out seen item indices
+        #     filtered = [i for i in I[0] if i not in seen]
+        #     top_idxs = filtered[:N]
+        #     top_items = [self.index_to_item_id[i] for i in top_idxs]
+        #     # get corresponding scores
+        #     scores = [float(D[0][list(I[0]).index(i)]) for i in top_idxs]
+        #     results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items, "scores": scores}))
 
         return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": [], "scores": []})
