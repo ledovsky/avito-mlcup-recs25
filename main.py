@@ -294,7 +294,7 @@ def initialize_model(
         torchemb_config = {
             "embedding_dim": 64,
             "epochs": 5,
-            "batch_size": 1024,
+            "batch_size": 128,
             "lr": 1e-3,
             "alpha": 0.1,
         }
