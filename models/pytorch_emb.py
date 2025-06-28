@@ -80,84 +80,82 @@ class TorchEmbModel(BaseTorchModel):
             dataset, batch_size=self.batch_size, shuffle=True
         )
 
-        with profile(
-            activities=[ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if torch.cuda.is_available() else []),
-            schedule=torch.profiler.schedule(wait=0, warmup=0, active=10, repeat=999),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler", worker_name="worker0"),
-            record_shapes=True,
-            with_stack=True,
-            profile_memory=True
-        ) as prof:
-            for epoch in range(self.epochs):
-                total_loss = 0.0
+        # with profile(
+        #     activities=[ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if torch.cuda.is_available() else []),
+        #     schedule=torch.profiler.schedule(wait=0, warmup=0, active=10, repeat=999),
+        #     on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler", worker_name="worker0"),
+        #     record_shapes=True,
+        #     with_stack=True,
+        #     profile_memory=True
+        # ) as prof:
+        for epoch in range(self.epochs):
+            total_loss = 0.0
             iter = 0
             for batch_users, batch_items in tqdm(dataloader, desc=f"Epoch {epoch}"):
                 iter += 1
                 if iter > 50:
                     break
-                with record_function("load_to_device"):
-                    batch_users = batch_users.to(self.device)
-                    batch_items = batch_items.to(self.device)
+                # with record_function("load_to_device"):
+                batch_users = batch_users.to(self.device)
+                batch_items = batch_items.to(self.device)
 
-                with record_function("forward"):
-                    user_emb = self.user_embeddings(batch_users)
-                    pos_item_emb = self.item_embeddings(batch_items)
+                # with record_function("forward"):
+                user_emb = self.user_embeddings(batch_users)
+                pos_item_emb = self.item_embeddings(batch_items)
 
-                with record_function("pos_loss"):
-                    # compute positive loss
-                    pos_labels = torch.ones(len(batch_users), device=self.device)
-                    pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels)
+                # with record_function("pos_loss"):
+                # compute positive loss
+                pos_labels = torch.ones(len(batch_users), device=self.device)
+                pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels)
 
-                with record_function("sample_neg"):
+                # with record_function("sample_neg"):
                     # in-batch negatives: sample k negatives per positive
-                    k = 10
-                    B = len(batch_users)
-                    # shape (B, B, D)
-                    expanded_user_mat = user_emb.unsqueeze(1).expand(-1, B, -1)
-                    expanded_item_mat = pos_item_emb.unsqueeze(0).expand(B, -1, -1)
-                    # mask out positive pairs
-                    mask = ~torch.eye(B, dtype=torch.bool, device=self.device)
-                    neg_user_all = expanded_user_mat[mask].reshape(B, B-1, self.embedding_dim)
-                    neg_item_all = expanded_item_mat[mask].reshape(B, B-1, self.embedding_dim)
-                    # sample k negatives per positive
-                    idx = torch.randperm(B-1, device=self.device)[:k]
-                    sampled_user = neg_user_all[:, idx, :].reshape(-1, self.embedding_dim)
-                    sampled_neg = neg_item_all[:, idx, :].reshape(-1, self.embedding_dim)
+                k = 10
+                B = len(batch_users)
+                # shape (B, B, D)
+                expanded_user_mat = user_emb.unsqueeze(1).expand(-1, B, -1)
+                expanded_item_mat = pos_item_emb.unsqueeze(0).expand(B, -1, -1)
+                # mask out positive pairs
+                mask = ~torch.eye(B, dtype=torch.bool, device=self.device)
+                neg_user_all = expanded_user_mat[mask].reshape(B, B-1, self.embedding_dim)
+                neg_item_all = expanded_item_mat[mask].reshape(B, B-1, self.embedding_dim)
+                # sample k negatives per positive
+                idx = torch.randperm(B-1, device=self.device)[:k]
+                sampled_user = neg_user_all[:, idx, :].reshape(-1, self.embedding_dim)
+                sampled_neg = neg_item_all[:, idx, :].reshape(-1, self.embedding_dim)
 
-                with record_function("neg_loss"):
-                    neg_labels = -torch.ones(B * k, device=self.device)
-                    neg_loss = loss_fn(sampled_user, sampled_neg, neg_labels)
+                # with record_function("neg_loss"):
+                neg_labels = -torch.ones(B * k, device=self.device)
+                neg_loss = loss_fn(sampled_user, sampled_neg, neg_labels)
 
-                with record_function("backwards"):
-                    loss = pos_loss + self.alpha * neg_loss
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                # with record_function("backwards"):
+                loss = pos_loss + self.alpha * neg_loss
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-                with record_function("add loss"):
-                    total_loss += loss.item()
+                # with record_function("add loss"):
+                total_loss += loss.item()
 
-                prof.step()
+                # prof.step()
 
-            if self.run:
-                self.run.log({"epoch": epoch, "loss": total_loss})
+        if self.run:
+            self.run.log({"epoch": epoch, "loss": total_loss})
 
         self.user_embeddings_np = self.user_embeddings.weight.detach().cpu().numpy()
         self.item_embeddings_np = self.item_embeddings.weight.detach().cpu().numpy()
 
-    def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
-        item_matrix = self.item_embeddings_np
-        faiss.normalize_L2(item_matrix)
-        index = faiss.IndexFlatIP(self.embedding_dim)
-        index.add(item_matrix)
+    def predict(self, user_to_pred: list[int | str], N: int = 40, batch_size: int = 100) -> pl.DataFrame:
+        # item_matrix = self.item_embeddings_np
+        # index = faiss.IndexFlatIP(self.embedding_dim)
+        # index.add(item_matrix)
 
-        results = []
-        # for u in user_to_pred:
+        # results = []
+        # for u in tqdm(user_to_pred):
         #     if u not in self.user_id_to_index:
         #         continue
         #     u_idx = self.user_id_to_index[u]
-        #     u_emb = self.user_embeddings.weight[u_idx].detach().cpu().numpy().reshape(1, -1)
-        #     faiss.normalize_L2(u_emb)
+        #     u_emb = self.user_embeddings_np[u_idx].reshape(1, -1)
         #     # search for more items to account for seen ones
         #     search_k = N + len(self.seen_items.get(u_idx, set()))
         #     D, I = index.search(u_emb, search_k)
@@ -170,4 +168,73 @@ class TorchEmbModel(BaseTorchModel):
         #     scores = [float(D[0][list(I[0]).index(i)]) for i in top_idxs]
         #     results.append(pl.DataFrame({"cookie": [u] * len(top_items), "node": top_items, "scores": scores}))
 
-        return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": [], "scores": []})
+        # return pl.concat(results) if results else pl.DataFrame({"cookie": [], "node": [], "scores": []})
+    
+        """
+        Predict top-N items per user using FAISS HNSW index and return as Polars DataFrame.
+
+        Args:
+            user_to_pred: List of user IDs to predict for
+            N: Number of items to recommend per user
+            batch_size: Batch size for FAISS search
+
+        Returns:
+            Polars DataFrame with columns: user, item, scores
+        """
+        # FAISS setup
+        dim = self.emb_dim
+        index = faiss.IndexHNSWFlat(dim, 32, faiss.METRIC_INNER_PRODUCT)
+        item_embs = self.items_embeddings_np.astype(np.float32)
+        user_embs = self.user_embeddings_np.astype(np.float32)
+        index.add(item_embs)
+
+        # Collect results
+        all_user_ids = []
+        all_item_ids = []
+        all_scores = []
+
+        for i in range(0, len(user_to_pred), batch_size):
+            batch_user_ids = user_to_pred[i:i + batch_size]
+            try:
+                user_indices = [self.user_id_to_index[u] for u in batch_user_ids]
+            except KeyError as e:
+                raise ValueError(f"Unknown user ID: {e.args[0]}")
+
+            batch_embs = user_embs[user_indices]
+            scores, indices = index.search(batch_embs, N * 3)
+
+            for j, user_id in enumerate(batch_user_ids):
+                seen = set(self.seen_items.get(user_id, []))
+                user_recs = []
+                user_scores = []
+
+                for item_idx, score in zip(indices[j], scores[j]):
+                    item_id = self.index_to_item_id[item_idx]
+                    if item_id not in seen and item_id not in user_recs:
+                        user_recs.append(item_id)
+                        user_scores.append(score)
+                    if len(user_recs) >= N:
+                        break
+
+                # Fill from populars if needed
+                if len(user_recs) < N:
+                    for pop_id in self.populars:
+                        if pop_id not in seen and pop_id not in user_recs:
+                            user_recs.append(pop_id)
+                            user_scores.append(0.0)  # Neutral/default score
+                        if len(user_recs) >= N:
+                            break
+
+                # Truncate to N (should already be N in most cases)
+                user_recs = user_recs[:N]
+                user_scores = user_scores[:N]
+
+                all_user_ids.extend([user_id] * N)
+                all_item_ids.extend(user_recs)
+                all_scores.extend(user_scores)
+
+        return pl.DataFrame({
+            "user": all_user_ids,
+            "item": all_item_ids,
+            "scores": all_scores
+        })
