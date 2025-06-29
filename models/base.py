@@ -3,6 +3,7 @@ from typing import Self
 import joblib
 import polars as pl
 from scipy.sparse import csr_matrix
+import torch
 
 
 class BaseModel:
@@ -85,3 +86,12 @@ class BaseModel:
             values = base_vals
 
         self.sparse_matrix = csr_matrix((values, (rows, cols)), shape=(len(users), len(items)))
+
+
+class BaseTorchModel(BaseModel):
+    def save(self, path: str) -> None:
+        torch.save(self, path)
+
+    @classmethod
+    def load(cls, path: str, weights_only: bool = True) -> Self:
+        return torch.load(path, weights_only=weights_only)
