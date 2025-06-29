@@ -93,5 +93,5 @@ class BaseTorchModel(BaseModel):
         torch.save(self, path)
 
     @classmethod
-    def load(cls, path: str) -> Self:
-        return torch.load(path)
+    def load(cls, path: str, weights_only: bool = True) -> Self:
+        return torch.load(path, weights_only=weights_only)

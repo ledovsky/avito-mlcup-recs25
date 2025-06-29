@@ -168,6 +168,15 @@ def train_candidate_generation_model(
     fit_model(model, args.model, df_train, df_events)
     timer.stop("model_fit")
 
+    # Save model
+    timer.start("model_save")
+    os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
+    model_path = f"{MODEL_PATH}/{args.model}-{run.name}.model"
+    run.summary["model_path"] = model_path
+    model.save(model_path)
+    print(f"Model saved to {model_path}")
+    timer.stop("model_save")
+
     # Evaluate model
     timer.start("model_eval")
     eval_cookies = df_eval["cookie"].to_list()
@@ -178,14 +187,6 @@ def train_candidate_generation_model(
     print(f"Recall@{top_k} on eval: {recall:.4f}")
     timer.stop("model_eval")
 
-    # Save model
-    timer.start("model_save")
-    os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
-    model_path = f"{MODEL_PATH}/{args.model}-{run.name}.model"
-    run.summary["model_path"] = model_path
-    model.save(model_path)
-    print(f"Model saved to {model_path}")
-    timer.stop("model_save")
 
 
 def create_ranking_dataset(
@@ -293,10 +294,11 @@ def initialize_model(
     elif model_name == "torch-emb":
         torchemb_config = {
             "embedding_dim": 64,
-            "epochs": 5,
+            "epochs": 3,
             "batch_size": 1024,
             "lr": 1e-3,
             "alpha": 0.1,
+            "top_k_items": 40_000,
         }
         run.config.update(torchemb_config)
         model = TorchEmbModel(run, **torchemb_config)
