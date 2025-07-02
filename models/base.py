@@ -94,4 +94,72 @@ class BaseTorchModel(BaseModel):
 
     @classmethod
     def load(cls, path: str, weights_only: bool = True) -> Self:
-        return torch.load(path, weights_only=weights_only)
+        return torch.load(path, weights_only=weights_only)class FaissPredict:
+    """
+    Mixin providing FAISS-based predict functionality.
+    """
+
+    def set_embeddings(self, user_embeddings_np, item_embeddings_np):
+        self.user_embeddings_np = user_embeddings_np
+        self.item_embeddings_np = item_embeddings_np
+
+    def set_user_mappings(self, user_id_to_index, index_to_item_id):
+        self.user_id_to_index = user_id_to_index
+        self.index_to_item_id = index_to_item_id
+
+    def set_seen_items(self, seen_items: dict[int, set[int]]):
+        self.seen_items = seen_items
+
+    def set_populars(self, populars: list[int]):
+        self.populars = populars
+
+    def predict(self, user_to_pred: list[int | str], N: int = 40, batch_size: int = 100) -> pl.DataFrame:
+        """
+        Predict top-N items per user using FAISS HNSW index and return as Polars DataFrame.
+        """
+        import numpy as np
+        import faiss
+        from tqdm import tqdm
+
+        dim = self.embedding_dim
+        index = faiss.IndexHNSWFlat(dim, 32, faiss.METRIC_INNER_PRODUCT)
+        item_embs = self.item_embeddings_np.astype(np.float32)
+        user_embs = self.user_embeddings_np.astype(np.float32)
+
+        # normalize
+        item_embs /= np.linalg.norm(item_embs, axis=1, keepdims=True)
+        user_embs /= np.linalg.norm(user_embs, axis=1, keepdims=True)
+
+        index.add(item_embs)
+
+        all_user_ids, all_item_ids, all_scores = [], [], []
+
+        for i in tqdm(range(0, len(user_to_pred), batch_size), total=len(user_to_pred)//batch_size):
+            batch_user_ids = user_to_pred[i:i+batch_size]
+            batch_user_ids = [u for u in batch_user_ids if u in self.user_id_to_index]
+
+            user_indices = [self.user_id_to_index[u] for u in batch_user_ids]
+            batch_embs = user_embs[user_indices]
+            scores, indices = index.search(batch_embs, N*3)
+
+            for j, user_id in enumerate(batch_user_ids):
+                seen = set(self.seen_items.get(user_id, []))
+                recs, rec_scores = [], []
+                for idx, score in zip(indices[j], scores[j]):
+                    item_id = self.index_to_item_id[idx]
+                    if item_id not in seen and item_id not in recs:
+                        recs.append(item_id); rec_scores.append(score)
+                    if len(recs) >= N:
+                        break
+                if len(recs) < N:
+                    for pid in self.populars:
+                        if pid not in seen and pid not in recs:
+                            recs.append(pid); rec_scores.append(0.0)
+                        if len(recs) >= N:
+                            break
+                recs, rec_scores = recs[:N], rec_scores[:N]
+                all_user_ids += [user_id] * N
+                all_item_ids += recs
+                all_scores += rec_scores
+
+        return pl.DataFrame({"cookie": all_user_ids, "node": all_item_ids, "scores": all_scores})

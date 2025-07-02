@@ -10,10 +10,10 @@ import torch.nn.functional as F
 from torch.profiler import profile, ProfilerActivity, record_function
 from tqdm import tqdm
 
-from .base import BaseTorchModel
+from .base import BaseTorchModel, FaissPredict
 
 
-class TorchEmbModel(BaseTorchModel):
+class TorchEmbModel(FaissPredict, BaseTorchModel):
     def __init__(
         self,
         run: wandb.wandb_run.Run,
@@ -141,7 +141,7 @@ class TorchEmbModel(BaseTorchModel):
         self.user_embeddings_np = self.user_embeddings.weight.detach().cpu().numpy()
         self.item_embeddings_np = self.item_embeddings.weight.detach().cpu().numpy()
 
-    def predict(self, user_to_pred: list[int | str], N: int = 40, batch_size: int = 100) -> pl.DataFrame:
+    def _predict_impl(self, user_to_pred: list[int | str], N: int = 40, batch_size: int = 100) -> pl.DataFrame:
         """
         Predict top-N items per user using FAISS HNSW index and return as Polars DataFrame.
 
