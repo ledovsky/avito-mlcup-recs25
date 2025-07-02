@@ -72,7 +72,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             lr=self.lr,
         )
         # loss_fn = nn.CosineEmbeddingLoss(reduction="mean")
-        loss_fn = nn.BCEWithLogitsLoss(pos_weight=1/self.alpha)
+        loss_fn = nn.BCEWithLogitsLoss()
         self.run.config.update({"loss": "BCEWithLogits"})
 
         user_indices = torch.tensor(
@@ -108,9 +108,10 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
                 user_emb = self.user_embeddings(batch_users)
                 pos_item_emb = self.item_embeddings(batch_items)
 
-                # compute positive loss
+                # compute positive loss via dot product
                 pos_labels = torch.ones(len(batch_users), device=self.device)
-                pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels)
+                pos_scores = (user_emb * pos_item_emb).sum(dim=1)
+                pos_loss = loss_fn(pos_scores, pos_labels)
 
                 # in-batch negatives: sample k negatives per positive
                 k = self.k_inbatch_negs
@@ -127,8 +128,9 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
                 sampled_user = neg_user_all[:, idx, :].reshape(-1, self.embedding_dim)
                 sampled_neg = neg_item_all[:, idx, :].reshape(-1, self.embedding_dim)
 
-                neg_labels = -torch.ones(B * k, device=self.device)
-                neg_loss = loss_fn(sampled_user, sampled_neg, neg_labels)
+                neg_labels = torch.zeros(B * k, device=self.device)
+                neg_scores = (sampled_user * sampled_neg).sum(dim=1)
+                neg_loss = loss_fn(neg_scores, neg_labels)
 
                 loss = pos_loss + self.alpha * neg_loss
                 optimizer.zero_grad()
