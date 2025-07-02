@@ -71,7 +71,9 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             list(self.user_embeddings.parameters()) + list(self.item_embeddings.parameters()),
             lr=self.lr,
         )
-        loss_fn = nn.CosineEmbeddingLoss(reduction="mean")
+        # loss_fn = nn.CosineEmbeddingLoss(reduction="mean")
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=1/self.alpha)
+        self.run.config.update({"loss": "BCEWithLogits"})
 
         user_indices = torch.tensor(
             [self.user_id_to_index[u] for u in df_train["cookie"].to_list()],
