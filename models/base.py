@@ -1,9 +1,12 @@
 from typing import Self
 
+import faiss
 import joblib
+import numpy as np
 import polars as pl
-from scipy.sparse import csr_matrix
 import torch
+from scipy.sparse import csr_matrix
+from tqdm import tqdm
 
 
 class BaseModel:
@@ -94,7 +97,10 @@ class BaseTorchModel(BaseModel):
 
     @classmethod
     def load(cls, path: str, weights_only: bool = True) -> Self:
-        return torch.load(path, weights_only=weights_only)class FaissPredict:
+        return torch.load(path, weights_only=weights_only)
+    
+
+class FaissPredict:
     """
     Mixin providing FAISS-based predict functionality.
     """
@@ -117,9 +123,6 @@ class BaseTorchModel(BaseModel):
         """
         Predict top-N items per user using FAISS HNSW index and return as Polars DataFrame.
         """
-        import numpy as np
-        import faiss
-        from tqdm import tqdm
 
         dim = self.embedding_dim
         index = faiss.IndexHNSWFlat(dim, 32, faiss.METRIC_INNER_PRODUCT)
