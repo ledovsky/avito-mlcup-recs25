@@ -299,6 +299,7 @@ def initialize_model(
             "lr": 1e-3,
             "alpha": 0.1,
             "top_k_items": 40_000,
+            "k_inbatch_negs": 50,
         }
         run.config.update(torchemb_config)
         model = TorchEmbModel(run, **torchemb_config)

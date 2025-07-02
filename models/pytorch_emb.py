@@ -23,6 +23,7 @@ class TorchEmbModel(BaseTorchModel):
         lr: float = 1e-3,
         alpha: float = 0.1,
         top_k_items: int | None = None,
+        k_inbatch_negs: int = 10,
         debug: bool = False,
     ):
         super().__init__()
@@ -33,6 +34,7 @@ class TorchEmbModel(BaseTorchModel):
         self.lr = lr
         self.alpha = alpha
         self.top_k_items = top_k_items
+        self.k_inbatch_negs = k_inbatch_negs
         self.debug = debug
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
@@ -109,7 +111,7 @@ class TorchEmbModel(BaseTorchModel):
                 pos_loss = loss_fn(user_emb, pos_item_emb, pos_labels)
 
                 # in-batch negatives: sample k negatives per positive
-                k = 10
+                k = self.k_inbatch_negs
                 B = len(batch_users)
                 # shape (B, B, D)
                 expanded_user_mat = user_emb.unsqueeze(1).expand(-1, B, -1)
@@ -156,6 +158,13 @@ class TorchEmbModel(BaseTorchModel):
         index = faiss.IndexHNSWFlat(dim, 32, faiss.METRIC_INNER_PRODUCT)
         item_embs = self.item_embeddings_np.astype(np.float32)
         user_embs = self.user_embeddings_np.astype(np.float32)
+
+        l2_norm = np.linalg.norm(item_embs, ord=2, axis=1, keepdims=True)
+        item_embs = item_embs / l2_norm
+        
+        l2_norm = np.linalg.norm(user_embs, ord=2, axis=1, keepdims=True)
+        user_embs = user_embs / l2_norm
+
         index.add(item_embs)
 
         # Collect results
