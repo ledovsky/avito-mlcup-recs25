@@ -27,6 +27,15 @@ def test_als():
     model.predict(eval_cookies, N=40)
 
 
+def test_als_2():
+    df_train, df_cat, df_events = get_test_data()
+    run = wandb.init(mode="disabled")
+    model = initialize_model("als-2", run, df_events, df_cat)
+    fit_model(model, "als-2", df_train, df_events)
+    eval_cookies = df_train["cookie"].to_list()
+    model.predict(eval_cookies, N=40)
+
+
 def test_lightfm():
     df_train, df_cat, df_events = get_test_data()
     run = wandb.init(mode="disabled")

@@ -41,9 +41,7 @@ class BaseModel:
             descending=[False, False, False, True],
         ).unique(subset=["cookie", "node"])
 
-    def filter_top_k_items(
-        self, df: pl.DataFrame, top_k_items: int
-    ) -> pl.DataFrame:
+    def filter_top_k_items(self, df: pl.DataFrame, top_k_items: int) -> pl.DataFrame:
         top_items = (
             df["node"]
             .value_counts()
@@ -52,6 +50,24 @@ class BaseModel:
             .to_list()
         )
         return df.filter(pl.col("node").is_in(top_items))
+
+    def get_seen_nodes(self, df_train: pl.DataFrame) -> dict[int, list[int]]:
+        seen_nodes_df = df_train.group_by("cookie").agg(
+            pl.col("node").unique().alias("seen_nodes")
+        )
+        seen_nodes: dict[int, list[int]] = {
+            row["cookie"]: row["seen_nodes"] for row in seen_nodes_df.to_dicts()
+        }
+        return seen_nodes
+
+    def get_populars(self, df_train: pl.DataFrame) -> list[int]:
+        return (
+            df_train.group_by("node")
+            .agg(pl.col("cookie").len().alias("len"))
+            .sort("len", descending=True)
+            .get_column("len")
+            .to_list()[:1000]
+        )
 
     def build_interaction_matrix(
         self,
@@ -88,7 +104,9 @@ class BaseModel:
         else:
             values = base_vals
 
-        self.sparse_matrix = csr_matrix((values, (rows, cols)), shape=(len(users), len(items)))
+        self.sparse_matrix = csr_matrix(
+            (values, (rows, cols)), shape=(len(users), len(items))
+        )
 
 
 class BaseTorchModel(BaseModel):
@@ -98,12 +116,19 @@ class BaseTorchModel(BaseModel):
     @classmethod
     def load(cls, path: str, weights_only: bool = True) -> Self:
         return torch.load(path, weights_only=weights_only)
-    
+
 
 class FaissPredict:
     """
     Mixin providing FAISS-based predict functionality.
     """
+
+    def __init__(self, *args, **kwargs):
+        self.user_embeddings_np: np.typing.NDArray | None = None
+        self.item_embeddings_np: np.typing.NDArray | None = None
+        self.user_id_to_index: dict[int, int] | None = None
+        self.index_to_item_id: dict[int, int] | None = None
+        super().__init__(*args, **kwargs)
 
     def set_embeddings(self, user_embeddings_np, item_embeddings_np):
         self.user_embeddings_np = user_embeddings_np
@@ -119,31 +144,40 @@ class FaissPredict:
     def set_populars(self, populars: list[int]):
         self.populars = populars
 
-    def predict(self, user_to_pred: list[int | str], N: int = 40, batch_size: int = 100) -> pl.DataFrame:
+    def set_is_cos_dist(self, is_cos_dist: bool):
+        self.is_cos_dist = is_cos_dist
+
+    def predict(
+        self, user_to_pred: list[int | str], N: int = 40, batch_size: int = 100
+    ) -> pl.DataFrame:
         """
         Predict top-N items per user using FAISS HNSW index and return as Polars DataFrame.
         """
 
-        dim = self.embedding_dim
+        dim = self.user_embeddings_np.shape[1]
         index = faiss.IndexHNSWFlat(dim, 32, faiss.METRIC_INNER_PRODUCT)
         item_embs = self.item_embeddings_np.astype(np.float32)
         user_embs = self.user_embeddings_np.astype(np.float32)
 
-        # normalize
-        item_embs /= np.linalg.norm(item_embs, axis=1, keepdims=True)
-        user_embs /= np.linalg.norm(user_embs, axis=1, keepdims=True)
+        if self.is_cos_dist:
+            # normalize
+            item_embs /= np.linalg.norm(item_embs, axis=1, keepdims=True)
+            user_embs /= np.linalg.norm(user_embs, axis=1, keepdims=True)
 
         index.add(item_embs)
 
         all_user_ids, all_item_ids, all_scores = [], [], []
 
-        for i in tqdm(range(0, len(user_to_pred), batch_size), total=len(user_to_pred)//batch_size):
-            batch_user_ids = user_to_pred[i:i+batch_size]
+        for i in tqdm(
+            range(0, len(user_to_pred), batch_size),
+            total=len(user_to_pred) // batch_size,
+        ):
+            batch_user_ids = user_to_pred[i : i + batch_size]
             batch_user_ids = [u for u in batch_user_ids if u in self.user_id_to_index]
 
             user_indices = [self.user_id_to_index[u] for u in batch_user_ids]
             batch_embs = user_embs[user_indices]
-            scores, indices = index.search(batch_embs, N*3)
+            scores, indices = index.search(batch_embs, N * 3)
 
             for j, user_id in enumerate(batch_user_ids):
                 seen = set(self.seen_items.get(user_id, []))
@@ -151,13 +185,15 @@ class FaissPredict:
                 for idx, score in zip(indices[j], scores[j]):
                     item_id = self.index_to_item_id[idx]
                     if item_id not in seen and item_id not in recs:
-                        recs.append(item_id); rec_scores.append(score)
+                        recs.append(item_id)
+                        rec_scores.append(score)
                     if len(recs) >= N:
                         break
                 if len(recs) < N:
                     for pid in self.populars:
                         if pid not in seen and pid not in recs:
-                            recs.append(pid); rec_scores.append(0.0)
+                            recs.append(pid)
+                            rec_scores.append(0.0)
                         if len(recs) >= N:
                             break
                 recs, rec_scores = recs[:N], rec_scores[:N]
@@ -165,4 +201,6 @@ class FaissPredict:
                 all_item_ids += recs
                 all_scores += rec_scores
 
-        return pl.DataFrame({"cookie": all_user_ids, "node": all_item_ids, "scores": all_scores})
+        return pl.DataFrame(
+            {"cookie": all_user_ids, "node": all_item_ids, "scores": all_scores}
+        )

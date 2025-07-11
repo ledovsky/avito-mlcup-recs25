@@ -8,7 +8,10 @@ import polars as pl
 from scipy.sparse import csr_matrix
 import joblib
 
-from .base import BaseModel
+import implicit.cpu.als
+import implicit.gpu.als
+
+from .base import BaseModel, FaissPredict
 
 
 class ALSRecommender(BaseModel):
@@ -18,7 +21,7 @@ class ALSRecommender(BaseModel):
 
     def __init__(
         self,
-        run: wandb.wandb_run.Run,
+        run: wandb.wandb_run.Run = wandb.init(mode="disabled"),
         do_dedupe: bool = False,
         use_week_discount: bool = False,
         filter_rare_events: bool = False,
@@ -32,15 +35,22 @@ class ALSRecommender(BaseModel):
         self.als_kwargs = {
             "factors": als_factors,
             "iterations": iterations,
-            "calculate_training_loss": True
+            "calculate_training_loss": True,
         }
         self.do_dedupe = do_dedupe
         self.use_week_discount = use_week_discount
         self.flag_filter_rare_events = filter_rare_events
         self.run = run
+        # log device type to wandb
+        device = "gpu" if "gpu" in implicit.als.AlternatingLeastSquares.__module__ else "cpu"
+        self.run.config.update({"device": device})
 
         self.contact_weight = contact_weight
-        self.model: implicit.als.AlternatingLeastSquares = None
+        self.model: (
+            implicit.cpu.als.AlternatingLeastSquares
+            | implicit.gpu.als.AlternatingLeastSquares
+            | None
+        ) = None
         self.top_k_items = top_k_items
         self.loss_ar: list[float] = []
 
@@ -112,3 +122,12 @@ class ALSRecommender(BaseModel):
     @classmethod
     def load(cls, path: str) -> Self:
         return joblib.load(path)
+
+
+class ALS2(FaissPredict, ALSRecommender):
+    def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
+        super().fit(df_train, df_events)
+        self.set_seen_items(self.get_seen_nodes(df_train))
+        self.set_embeddings(self.model.user_factors, self.model.item_factors)
+        self.set_is_cos_dist(False)
+        self.set_populars(self.get_populars(df_train))

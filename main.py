@@ -9,7 +9,7 @@ import polars as pl
 import wandb
 import wandb.wandb_run
 from models.base import BaseModel
-from models.implicit_model import ALSRecommender
+from models.implicit_model import ALSRecommender, ALS2
 from models.lightfm_model import LightFMRecommender
 from models.popular import Popular, PopularLocCat
 from models.tfidf_model import TfidfRecommender
@@ -36,8 +36,8 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["als", "tfidf", "lightfm", "popular-loc-cat", "popular", "torch-emb"],
-        help="Which model to run ('als', 'tfidf', 'lightfm', 'popular', 'popular-loc-cat' or 'torch-emb').",
+        choices=["als", "als-2", "tfidf", "lightfm", "popular-loc-cat", "popular", "torch-emb"],
+        help="Which model to run",
     )
     train_candgen_parser.add_argument(
         "--save-path",
@@ -188,7 +188,6 @@ def train_candidate_generation_model(
     timer.stop("model_eval")
 
 
-
 def create_ranking_dataset(
     args,
     df_train: pl.DataFrame,
@@ -280,6 +279,18 @@ def initialize_model(
         }
         run.config.update(als_config)
         return ALSRecommender(run, **als_config)
+    if model_name == "als-2":
+        als_config = {
+            "do_dedupe": False,
+            "use_week_discount": False,
+            "filter_rare_events": False,
+            "contact_weight": 10,
+            "als_factors": 120,
+            "iterations": 10,
+            "top_k_items": 40_000,
+        }
+        run.config.update(als_config)
+        return ALS2(run, **als_config)
     elif model_name == "tfidf":
         return TfidfRecommender(df_events)
     elif model_name == "lightfm":
@@ -297,9 +308,10 @@ def initialize_model(
             "epochs": 3,
             "batch_size": 1024,
             "lr": 1e-3,
-            "alpha": 0.1,
+            "alpha": 1.0,
             "top_k_items": 40_000,
             "k_inbatch_negs": 200,
+            "debug": True,
         }
         run.config.update(torchemb_config)
         model = TorchEmbModel(run, **torchemb_config)
@@ -315,7 +327,7 @@ def fit_model(
     model: BaseModel, model_name: str, df_train: pl.DataFrame, df_events: pl.DataFrame
 ) -> None:
     """Fit a model based on the model name"""
-    if model_name in ["als", "lightfm", "torch-emb"]:
+    if model_name in ["als", "als-2", "lightfm", "torch-emb"]:
         model.fit(df_train, df_events)
     elif model_name in ["tfidf"]:
         model.fit(
