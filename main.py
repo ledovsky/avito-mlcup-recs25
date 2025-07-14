@@ -308,10 +308,10 @@ def initialize_model(
             "epochs": 3,
             "batch_size": 1024,
             "lr": 1e-3,
-            "alpha": 1.0,
+            "alpha": 0.01,
             "top_k_items": 40_000,
             "k_inbatch_negs": 200,
-            "debug": True,
+            # "debug": True,
         }
         run.config.update(torchemb_config)
         model = TorchEmbModel(run, **torchemb_config)
