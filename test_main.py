@@ -47,6 +47,7 @@ def test_torch_emb():
     df_train, df_cat, df_events = get_test_data()
     run = wandb.init(mode="disabled")
     model = initialize_model("torch-emb", run, df_events, df_cat)
+    model.batch_size=50
     fit_model(model, "torch-emb", df_train, df_events)
     eval_cookies = df_train["cookie"].to_list()
     model.predict(eval_cookies, N=40)

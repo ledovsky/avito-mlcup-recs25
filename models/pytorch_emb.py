@@ -72,6 +72,9 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         self.item_embeddings = nn.Embedding(num_items, self.embedding_dim).to(
             self.device
         )
+        if self.device != torch.device("mps"):
+            nn.init.orthogonal_(self.user_embeddings.weight)
+            nn.init.orthogonal_(self.item_embeddings.weight)
 
         optimizer = torch.optim.Adam(
             list(self.user_embeddings.parameters())
@@ -121,11 +124,12 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
                 pos_loss = loss_fn(pos_scores, pos_labels)
 
                 # in-batch negatives: sample k negatives per positive
-                k = self.k_inbatch_negs
+                k = min(self.k_inbatch_negs, len(batch_users) // 2)
                 B = len(batch_users)
                 # shape (B, B, D)
                 expanded_user_mat = user_emb.unsqueeze(1).expand(-1, B, -1)
                 expanded_item_mat = pos_item_emb.unsqueeze(0).expand(B, -1, -1)
+
                 # mask out positive pairs
                 mask = ~torch.eye(B, dtype=torch.bool, device=self.device)
                 neg_user_all = expanded_user_mat[mask].reshape(
@@ -157,3 +161,4 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             self.user_embeddings.weight.detach().cpu().numpy(),
             self.item_embeddings.weight.detach().cpu().numpy(),
         )
+
