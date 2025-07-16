@@ -29,6 +29,7 @@ class BaseModel:
     def load(cls, path: str) -> Self:
         return joblib.load(path)
 
+
     def filter_rare_events(self, df_train: pl.DataFrame, thr=3) -> pl.DataFrame:
         return (
             df_train.group_by(["cookie", "node"])
