@@ -289,7 +289,7 @@ def initialize_model(
             "use_week_discount": False,
             "filter_rare_events": False,
             "contact_weight": 10,
-            "als_factors": 120,
+            "als_factors": 64,
             "iterations": 10,
             "top_k_items": 40_000,
         }

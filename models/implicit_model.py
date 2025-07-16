@@ -86,6 +86,7 @@ class ALSRecommender(BaseModel):
 
         self.model = implicit.als.AlternatingLeastSquares(**self.als_kwargs)
         self.model.fit(self.sparse_matrix, callback=callback)
+        self.set_embeddings(self.model.user_factors, self.model.item_factors)
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:
@@ -128,6 +129,5 @@ class ALS2(FaissPredict, ALSRecommender):
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
         super().fit(df_train, df_events)
         self.set_seen_items(self.get_seen_nodes(df_train))
-        self.set_embeddings(self.model.user_factors, self.model.item_factors)
         self.set_is_cos_dist(False)
         self.set_populars(self.get_populars(df_train))
