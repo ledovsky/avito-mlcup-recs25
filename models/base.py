@@ -112,7 +112,13 @@ class BaseModel:
             (values, (rows, cols)), shape=(len(users), len(items))
         )
 
+    def set_embeddings(self, user_embeddings_np, item_embeddings_np):
+        self.user_embeddings_np = user_embeddings_np
+        self.item_embeddings_np = item_embeddings_np
 
+    def set_user_mappings(self, user_id_to_index, index_to_item_id):
+        self.user_id_to_index = user_id_to_index
+        self.index_to_item_id = index_to_item_id
 
     def save_embeddings(self, path: str, run_name: str) -> None:
         np.save(os.path.join(path, f"{run_name}-user-emb.npy"), self.user_embeddings_np)
@@ -121,6 +127,7 @@ class BaseModel:
     def load_embeddings(self, path: str, run_name: str) -> None:
         self.user_embeddings_np = np.load(os.path.join(path, f"{run_name}-user-emb.npy"))
         self.item_embeddings_np = np.load(os.path.join(path, f"{run_name}-item-emb.npy"))
+
 
 class BaseTorchModel(BaseModel):
     def save(self, path: str) -> None:
@@ -131,25 +138,16 @@ class BaseTorchModel(BaseModel):
         return torch.load(path, weights_only=weights_only)
 
 
-class FaissPredict:
+class FaissPredict(BaseModel):
     """
     Mixin providing FAISS-based predict functionality.
     """
 
     def __init__(self, *args, **kwargs):
-        self.user_embeddings_np: np.typing.NDArray | None = None
-        self.item_embeddings_np: np.typing.NDArray | None = None
-        self.user_id_to_index: dict[int, int] | None = None
-        self.index_to_item_id: dict[int, int] | None = None
+        self.seen_items: dict[int, set[int]] = {}
+        self.populars: list[int] = []
+        self.is_cos_dist: bool = False
         super().__init__(*args, **kwargs)
-
-    def set_embeddings(self, user_embeddings_np, item_embeddings_np):
-        self.user_embeddings_np = user_embeddings_np
-        self.item_embeddings_np = item_embeddings_np
-
-    def set_user_mappings(self, user_id_to_index, index_to_item_id):
-        self.user_id_to_index = user_id_to_index
-        self.index_to_item_id = index_to_item_id
 
     def set_seen_items(self, seen_items: dict[int, set[int]]):
         self.seen_items = seen_items
