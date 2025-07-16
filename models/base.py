@@ -3,6 +3,7 @@ from typing import Self
 import faiss
 import joblib
 import numpy as np
+import os
 import polars as pl
 import torch
 from scipy.sparse import csr_matrix
@@ -15,6 +16,8 @@ class BaseModel:
         self.item_id_to_index: dict[int, int] = {}
         self.index_to_item_id: dict[int, int] = {}
         self.sparse_matrix: csr_matrix = None
+        self.user_embeddings_np: np.typing.NDArray | None = None
+        self.item_embeddings_np: np.typing.NDArray | None = None
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         raise NotImplementedError()
@@ -108,6 +111,15 @@ class BaseModel:
             (values, (rows, cols)), shape=(len(users), len(items))
         )
 
+
+
+    def save_embeddings(self, path: str, run_name: str) -> None:
+        np.save(os.path.join(path, f"{run_name}-user-emb.npy"), self.user_embeddings_np)
+        np.save(os.path.join(path, f"{run_name}-item-emb.npy"), self.item_embeddings_np)
+
+    def load_embeddings(self, path: str, run_name: str) -> None:
+        self.user_embeddings_np = np.load(os.path.join(path, f"{run_name}-user-emb.npy"))
+        self.item_embeddings_np = np.load(os.path.join(path, f"{run_name}-item-emb.npy"))
 
 class BaseTorchModel(BaseModel):
     def save(self, path: str) -> None:
