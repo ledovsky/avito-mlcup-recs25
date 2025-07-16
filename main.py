@@ -177,6 +177,13 @@ def train_candidate_generation_model(
     print(f"Model saved to {model_path}")
     timer.stop("model_save")
 
+    # Save embeddings
+    timer.start("embeddings_save")
+    os.makedirs("embeddings", exist_ok=True)
+    model.save_embeddings("embeddings", run.name)
+    print(f"Embeddings saved to embeddings/{run.name}-user-emb.npy and embeddings/{run.name}-item-emb.npy")
+    timer.stop("embeddings_save")
+
     # Evaluate model
     timer.start("model_eval")
     eval_cookies = df_eval["cookie"].to_list()
