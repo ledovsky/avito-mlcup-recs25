@@ -45,6 +45,12 @@ def main():
         help="Path to save the trained model",
         default="./trained",
     )
+    train_candgen_parser.add_argument(
+        "--load-emb",
+        type=str,
+        default="",
+        help="Run name to load embeddings from",
+    )
 
     # 2. Create ranking dataset
     create_ranking_dataset_parser = subparsers.add_parser(
@@ -163,6 +169,9 @@ def train_candidate_generation_model(
     timer.start("model_init")
     model = initialize_model(args.model, run, df_events, df_cat)
     timer.stop("model_init")
+    if args.load_emb:
+        model.load_embeddings("embeddings", args.load_emb)
+        print(f"Loaded embeddings from embeddings/{args.load_emb}-user-emb.npy and embeddings/{args.load_emb}-item-emb.npy")
 
     timer.start("model_fit")
     fit_model(model, args.model, df_train, df_events)
