@@ -37,7 +37,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         self.top_k_items = top_k_items
         self.k_inbatch_negs = k_inbatch_negs
         self.debug = debug
-        self.dedupe = debug
+        self._dedupe = dedupe
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
         self.user_embeddings_np: np.typing.NDArray | None = None
@@ -59,7 +59,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         if self.top_k_items:
             df_train = self.filter_top_k_items(df_train, self.top_k_items)
         
-        if self.dedupe:
+        if self._dedupe:
             df_train = self.dedupe(df_train)
 
         users = df_train["cookie"].unique().to_list()
@@ -109,11 +109,11 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             item_indices = item_indices[:10000]
 
         dataset = torch.utils.data.TensorDataset(user_indices, item_indices)
-        dataloader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True
-        )
 
         for epoch in range(self.epochs):
+            dataloader = torch.utils.data.DataLoader(
+                dataset, batch_size=self.batch_size, shuffle=True
+            )
             total_loss = 0.0
             for batch_users, batch_items in tqdm(dataloader, desc=f"Epoch {epoch}"):
                 # with record_function("load_to_device"):
