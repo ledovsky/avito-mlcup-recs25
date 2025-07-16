@@ -311,6 +311,7 @@ def initialize_model(
             "alpha": 0.01,
             "top_k_items": 40_000,
             "k_inbatch_negs": 200,
+            "dedupe": True,
             # "debug": True,
         }
         run.config.update(torchemb_config)

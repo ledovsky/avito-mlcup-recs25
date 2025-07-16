@@ -25,6 +25,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         top_k_items: int | None = None,
         k_inbatch_negs: int = 10,
         debug: bool = False,
+        dedupe: bool = False
     ):
         super().__init__()
         self.run = run
@@ -36,6 +37,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         self.top_k_items = top_k_items
         self.k_inbatch_negs = k_inbatch_negs
         self.debug = debug
+        self.dedupe = debug
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
         self.user_embeddings_np: np.typing.NDArray | None = None
@@ -56,6 +58,9 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
         if self.top_k_items:
             df_train = self.filter_top_k_items(df_train, self.top_k_items)
+        
+        if self.dedupe:
+            df_train = self.dedupe(df_train)
 
         users = df_train["cookie"].unique().to_list()
         items = df_train["node"].unique().to_list()
