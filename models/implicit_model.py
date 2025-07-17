@@ -22,7 +22,7 @@ class ALSRecommender(BaseModel):
     def __init__(
         self,
         run: wandb.wandb_run.Run = wandb.init(mode="disabled"),
-        do_dedupe: bool = False,
+        dedupe: bool = False,
         use_week_discount: bool = False,
         filter_rare_events: bool = False,
         contact_weight: int = 10,
@@ -37,7 +37,7 @@ class ALSRecommender(BaseModel):
             "iterations": iterations,
             "calculate_training_loss": True,
         }
-        self.do_dedupe = do_dedupe
+        self._dedupe = dedupe
         self.use_week_discount = use_week_discount
         self.flag_filter_rare_events = filter_rare_events
         self.run = run
@@ -63,7 +63,7 @@ class ALSRecommender(BaseModel):
         if self.flag_filter_rare_events:
             df_train = self.filter_rare_events(df_train)
 
-        if self.do_dedupe:
+        if self._dedupe:
             df_train = self.dedupe(df_train)
 
         if self.top_k_items:

@@ -26,16 +26,18 @@ class LightFMRecommender(FaissPredict, BaseModel):
         no_components: int = 30,
         contact_weight: int = 10,
         loss: str = "bpr",
+        epochs: int = 5,
     ) -> None:
 
         super().__init__()
-        self.epochs = 5
+        self.epochs = epochs
 
         self.top_k_items = top_k_items
         self.no_components = no_components
         self.contact_weight = contact_weight
         self.loss = loss
         self.model: LightFM = None
+        self.run = run
 
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
         event_weights = {

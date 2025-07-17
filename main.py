@@ -285,7 +285,7 @@ def initialize_model(
     """Initialize a model based on the model name"""
     if model_name == "als":
         als_config = {
-            "do_dedupe": False,
+            "dedupe": False,
             "use_week_discount": False,
             "filter_rare_events": False,
             "contact_weight": 10,
@@ -297,7 +297,7 @@ def initialize_model(
         return ALSRecommender(run, **als_config)
     if model_name == "als-2":
         als_config = {
-            "do_dedupe": False,
+            "dedupe": False,
             "use_week_discount": False,
             "filter_rare_events": False,
             "contact_weight": 10,
@@ -311,8 +311,10 @@ def initialize_model(
         return TfidfRecommender(df_events)
     elif model_name == "lightfm":
         lightfm_config = {
+            "epochs": 10,
             "top_k_items": 40_000,
-            "loss": "bpr",
+            # "loss": "bpr",
+            "loss": "warp",
             "no_components": 64,
         }
         return LightFMRecommender(run, **lightfm_config)
