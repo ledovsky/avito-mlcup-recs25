@@ -11,10 +11,10 @@ from sklearn.metrics import roc_auc_score
 import wandb
 import wandb.wandb_run
 
-from .base import BaseModel
+from .base import BaseModel, FaissPredict
 
 
-class LightFMRecommender(BaseModel):
+class LightFMRecommender(FaissPredict, BaseModel):
     """
     LightFM-based recommender using LightFM library.
     """
@@ -113,6 +113,11 @@ class LightFMRecommender(BaseModel):
                     )
             roc = roc_auc_score(y_true, y_score)
             print(f"Epoch {epoch}/{self.epochs} - val_roc_auc: {roc:.4f}")
+
+        self.set_embeddings(self.model.user_embeddings, self.model.item_embeddings)
+        self.set_seen_items(self.get_seen_nodes(df_train))
+        self.set_populars(self.get_populars(df_train))
+        self.set_is_cos_dist(False)
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         if self.model is None or self.sparse_matrix is None:

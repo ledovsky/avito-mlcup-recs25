@@ -313,7 +313,7 @@ def initialize_model(
         lightfm_config = {
             "top_k_items": 40_000,
             "loss": "bpr",
-            "no_components": 30,
+            "no_components": 64,
         }
         return LightFMRecommender(run, **lightfm_config)
     elif model_name == "popular-loc-cat":
