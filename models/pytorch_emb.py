@@ -132,7 +132,8 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
                 # compute positive loss via dot product
                 pos_labels = torch.ones(len(batch_users), device=self.device)
                 pos_scores = (user_emb * pos_item_emb).sum(dim=1)
-                pos_loss = (loss_fn(pos_scores, pos_labels) * batch_weights.float()).sum()
+                pos_loss = (loss_fn(pos_scores, pos_labels) * batch_weights.float()).mean()
+                # pos_loss = loss_fn(pos_scores, pos_labels).mean()
 
                 # in-batch negatives: sample k negatives per positive
                 k = min(self.k_inbatch_negs, len(batch_users) // 2)
@@ -156,7 +157,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
 
                 neg_labels = torch.zeros(B * k, device=self.device)
                 neg_scores = (sampled_user * sampled_neg).sum(dim=1)
-                neg_loss = loss_fn(neg_scores, neg_labels).sum()
+                neg_loss = loss_fn(neg_scores, neg_labels).mean()
 
                 loss = pos_loss + self.alpha * neg_loss
                 optimizer.zero_grad()
