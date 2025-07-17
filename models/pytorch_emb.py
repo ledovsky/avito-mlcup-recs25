@@ -87,7 +87,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             lr=self.lr,
         )
         # loss_fn = nn.CosineEmbeddingLoss(reduction="mean")
-        loss_fn = nn.BCEWithLogitsLoss()
+        loss_fn = nn.BCEWithLogitsLoss(reduction="none")
         self.run.config.update({"loss_fn": "BCEWithLogits"})
 
         user_indices = torch.tensor(
@@ -96,6 +96,11 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         )
         item_indices = torch.tensor(
             [self.item_id_to_index[i] for i in df_train["node"].to_list()],
+            dtype=torch.long,
+        )
+
+        weights = torch.tensor(
+            [10 if is_contact else 1 for is_contact in df_train["is_contact"].to_list()],
             dtype=torch.long,
         )
 
@@ -108,17 +113,18 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             user_indices = user_indices[:10000]
             item_indices = item_indices[:10000]
 
-        dataset = torch.utils.data.TensorDataset(user_indices, item_indices)
+        dataset = torch.utils.data.TensorDataset(user_indices, item_indices, weights)
 
         for epoch in range(self.epochs):
             dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.batch_size, shuffle=True
             )
             total_loss = 0.0
-            for batch_users, batch_items in tqdm(dataloader, desc=f"Epoch {epoch}"):
+            for batch_users, batch_items, batch_weights in tqdm(dataloader, desc=f"Epoch {epoch}"):
                 # with record_function("load_to_device"):
                 batch_users = batch_users.to(self.device)
                 batch_items = batch_items.to(self.device)
+                batch_weights = batch_weights.to(self.device)
 
                 user_emb = self.user_embeddings(batch_users)
                 pos_item_emb = self.item_embeddings(batch_items)
@@ -126,7 +132,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
                 # compute positive loss via dot product
                 pos_labels = torch.ones(len(batch_users), device=self.device)
                 pos_scores = (user_emb * pos_item_emb).sum(dim=1)
-                pos_loss = loss_fn(pos_scores, pos_labels)
+                pos_loss = (loss_fn(pos_scores, pos_labels) * batch_weights.float()).mean()
 
                 # in-batch negatives: sample k negatives per positive
                 k = min(self.k_inbatch_negs, len(batch_users) // 2)
