@@ -326,7 +326,7 @@ def initialize_model(
             "epochs": 3,
             "batch_size": 1024,
             "lr": 1e-3,
-            "alpha": 0.01,
+            "alpha": 0.1,
             "top_k_items": 40_000,
             "k_inbatch_negs": 200,
             "dedupe": True,
