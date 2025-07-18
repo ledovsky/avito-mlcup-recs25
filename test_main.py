@@ -26,6 +26,14 @@ def test_als():
     eval_cookies = df_train["cookie"].to_list()
     model.predict(eval_cookies, N=40)
 
+def test_torch_emb_load_embeddings():
+    df_train, df_cat, df_events = get_test_data()
+    run = wandb.init(mode="disabled")
+    model = initialize_model("torch-emb", run, df_events, df_cat)
+    model.load_embeddings("./test_data", "peachy-voice")
+    assert model.user_embeddings_np is not None
+    assert model.item_embeddings_np is not None
+
 
 def test_als_2():
     df_train, df_cat, df_events = get_test_data()
