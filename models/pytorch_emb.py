@@ -71,15 +71,25 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         num_users = len(self.user_id_to_index)
         num_items = len(self.item_id_to_index)
 
-        self.user_embeddings = nn.Embedding(num_users, self.embedding_dim).to(
-            self.device
-        )
-        self.item_embeddings = nn.Embedding(num_items, self.embedding_dim).to(
-            self.device
-        )
-        if self.device != torch.device("mps"):
-            nn.init.orthogonal_(self.user_embeddings.weight)
-            nn.init.orthogonal_(self.item_embeddings.weight)
+        if self.user_embeddings_np is not None and self.item_embeddings_np is not None:
+            self.user_embeddings = nn.Embedding(num_users, self.embedding_dim).to(self.device)
+            self.user_embeddings.weight.data.copy_(
+                torch.from_numpy(self.user_embeddings_np).to(self.device)
+            )
+            self.item_embeddings = nn.Embedding(num_items, self.embedding_dim).to(self.device)
+            self.item_embeddings.weight.data.copy_(
+                torch.from_numpy(self.item_embeddings_np).to(self.device)
+            )
+        else:
+            self.user_embeddings = nn.Embedding(num_users, self.embedding_dim).to(
+                self.device
+            )
+            self.item_embeddings = nn.Embedding(num_items, self.embedding_dim).to(
+                self.device
+            )
+            if self.device != torch.device("mps"):
+                nn.init.orthogonal_(self.user_embeddings.weight)
+                nn.init.orthogonal_(self.item_embeddings.weight)
 
         optimizer = torch.optim.Adam(
             list(self.user_embeddings.parameters())
