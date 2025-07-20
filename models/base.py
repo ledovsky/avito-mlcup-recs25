@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 class BaseModel:
     def __init__(self) -> None:
+        self.contact_weight: int = 1
         self.user_id_to_index: dict[str, int] = {}
         self.item_id_to_index: dict[int, int] = {}
         self.index_to_item_id: dict[int, int] = {}
@@ -92,11 +93,13 @@ class BaseModel:
 
         rows = df["cookie"].replace_strict(self.user_id_to_index).to_list()
         cols = df["node"].replace_strict(self.item_id_to_index).to_list()
-        base_vals = (
-            [event_weights.get(ev, 1) for ev in df[event_col].to_list()]
-            if event_weights
-            else [1] * len(rows)
-        )
+
+
+        base_vals = [
+                self.contact_weight if is_contact else 1
+                for is_contact in df["is_contact"].to_list()
+        ]
+        
         if use_week_discount and "week" in df.columns:
             weeks = df["week"].to_list()
             values = [
@@ -219,6 +222,7 @@ class FaissPredict(BaseModel):
                         if len(recs) >= N:
                             break
                 recs, rec_scores = recs[:N], rec_scores[:N]
+                assert (len(recs) == N)
                 all_user_ids += [user_id] * N
                 all_item_ids += recs
                 all_scores += rec_scores

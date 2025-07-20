@@ -56,6 +56,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             df_train = self.dedupe(df_train)
 
         self.set_seen_items(self.get_seen_nodes(df_train))
+        self.set_populars(self.get_populars(df_train))
         self.fill_indices(df_train)
 
         self.user_embeddings = nn.Embedding(self.num_users, self.embedding_dim).to(

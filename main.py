@@ -168,11 +168,11 @@ def train_candidate_generation_model(
 
     timer.start("model_init")
     model = initialize_model(args.model, run, df_events, df_cat)
-    timer.stop("model_init")
     if args.load_emb:
         run.config.update({"embed_from": args.load_emb})
         model.load_embeddings("embeddings", args.load_emb)
         print(f"Loaded embeddings from embeddings/{args.load_emb}-user-emb.npy and embeddings/{args.load_emb}-item-emb.npy")
+    timer.stop("model_init")
 
     timer.start("model_fit")
     fit_model(model, args.model, df_train, df_events)
