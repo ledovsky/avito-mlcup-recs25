@@ -230,3 +230,18 @@ class FaissPredict(BaseModel):
         return pl.DataFrame(
             {"cookie": all_user_ids, "node": all_item_ids, "scores": all_scores}
         )
+
+    def get_hard_negs(self, train_df: pl.DataFrame, user_list: list[int | str], top_k: int) -> pl.DataFrame:
+        """
+        Return hard negative samples by predicting top_k for each user and filtering out interactions present in train_df.
+        """
+        # get top-k predictions per user
+        preds = self.predict(user_list, N=top_k)
+        # remove any (cookie, node) present in train_df
+        negs = preds.join(
+            train_df.select(['cookie', 'node']).unique(),
+            on=['cookie', 'node'],
+            how='anti'
+        )
+        # return only cookie and node_id columns
+        return negs.select(['cookie', pl.col('node').alias('node_id')])
