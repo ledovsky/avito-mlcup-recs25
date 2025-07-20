@@ -26,14 +26,14 @@ class ALSRecommender(BaseModel):
         use_week_discount: bool = False,
         filter_rare_events: bool = False,
         contact_weight: int = 10,
-        als_factors: int = 60,
+        embedding_dim: int = 60,
         iterations: int = 10,
         top_k_items: int | None = None,
     ):
         super().__init__()
         # coniguration
         self.als_kwargs = {
-            "factors": als_factors,
+            "factors": embedding_dim,
             "iterations": iterations,
             "calculate_training_loss": True,
         }

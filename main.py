@@ -170,6 +170,7 @@ def train_candidate_generation_model(
     model = initialize_model(args.model, run, df_events, df_cat)
     timer.stop("model_init")
     if args.load_emb:
+        run.config.update({"embed_from": args.load_emb})
         model.load_embeddings("embeddings", args.load_emb)
         print(f"Loaded embeddings from embeddings/{args.load_emb}-user-emb.npy and embeddings/{args.load_emb}-item-emb.npy")
 
@@ -289,7 +290,7 @@ def initialize_model(
             "use_week_discount": False,
             "filter_rare_events": False,
             "contact_weight": 10,
-            "als_factors": 64,
+            "embedding_dim": 64,
             "iterations": 10,
             "top_k_items": 40_000,
         }
@@ -301,7 +302,7 @@ def initialize_model(
             "use_week_discount": False,
             "filter_rare_events": False,
             "contact_weight": 10,
-            "als_factors": 120,
+            "embedding_dim": 120,
             "iterations": 10,
             "top_k_items": 40_000,
         }
@@ -326,7 +327,7 @@ def initialize_model(
             "epochs": 3,
             "batch_size": 1024,
             "lr": 1e-3,
-            "alpha": 0.1,
+            "alpha": 0.01,
             "top_k_items": 40_000,
             "k_inbatch_negs": 200,
             "dedupe": True,

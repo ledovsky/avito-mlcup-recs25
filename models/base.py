@@ -18,6 +18,8 @@ class BaseModel:
         self.sparse_matrix: csr_matrix = None
         self.user_embeddings_np: np.typing.NDArray | None = None
         self.item_embeddings_np: np.typing.NDArray | None = None
+        self.num_users: int | None = None
+        self.num_items: int | None = None
 
     def predict(self, user_to_pred: list[int | str], N: int = 40) -> pl.DataFrame:
         raise NotImplementedError()
@@ -86,12 +88,7 @@ class BaseModel:
         - self.index_to_item_id,
         - self.sparse_matrix,
         """
-        users = df["cookie"].unique().to_list()
-        items = df["node"].unique().to_list()
-        items = df["node"].unique().to_list()
-        self.user_id_to_index = {u: i for i, u in enumerate(users)}
-        self.item_id_to_index = {j: i for i, j in enumerate(items)}
-        self.index_to_item_id = {i: j for j, i in self.item_id_to_index.items()}
+        self.fill_indices(df)
 
         rows = df["cookie"].replace_strict(self.user_id_to_index).to_list()
         cols = df["node"].replace_strict(self.item_id_to_index).to_list()
@@ -109,8 +106,22 @@ class BaseModel:
             values = base_vals
 
         self.sparse_matrix = csr_matrix(
-            (values, (rows, cols)), shape=(len(users), len(items))
+            (values, (rows, cols)), shape=(self.num_users, self.num_items)
         )
+    
+    def fill_indices(self, df):
+        """Fills:
+        - self.user_id_to_index,
+        - self.item_id_to_index,
+        - self.index_to_item_id,
+        """
+        users = df["cookie"].unique().to_list()
+        items = df["node"].unique().to_list()
+        self.user_id_to_index = {u: i for i, u in enumerate(users)}
+        self.item_id_to_index = {j: i for i, j in enumerate(items)}
+        self.index_to_item_id = {i: j for j, i in self.item_id_to_index.items()}
+        self.num_users = len(users)
+        self.num_items = len(items)
 
     def set_embeddings(self, user_embeddings_np, item_embeddings_np):
         self.user_embeddings_np = user_embeddings_np

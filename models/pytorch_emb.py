@@ -5,9 +5,7 @@ import wandb.wandb_run
 import numpy as np
 
 import polars as pl
-import faiss
 import torch.nn.functional as F
-from torch.profiler import profile, ProfilerActivity, record_function
 from tqdm import tqdm
 
 from .base import BaseTorchModel, FaissPredict
@@ -25,7 +23,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         top_k_items: int | None = None,
         k_inbatch_negs: int = 10,
         debug: bool = False,
-        dedupe: bool = False
+        dedupe: bool = False,
     ):
         super().__init__()
         self.run = run
@@ -40,8 +38,6 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         self._dedupe = dedupe
         self.user_embeddings: nn.Embedding | None = None
         self.item_embeddings: nn.Embedding | None = None
-        self.user_embeddings_np: np.typing.NDArray | None = None
-        self.item_embeddings_np: np.typing.NDArray | None = None
         self.device = torch.device(
             "cuda"
             if torch.cuda.is_available()
@@ -50,48 +46,33 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             else "cpu"
         )
         print(f"TorchEmbModel using device {self.device}")
-        self.seen_items: dict[int, set[int]] = {}
-
-        self.populars = []
         self.set_is_cos_dist(False)
 
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
         if self.top_k_items:
             df_train = self.filter_top_k_items(df_train, self.top_k_items)
-        
+
         if self._dedupe:
             df_train = self.dedupe(df_train)
 
-        users = df_train["cookie"].unique().to_list()
-        items = df_train["node"].unique().to_list()
-        self.user_id_to_index = {u: i for i, u in enumerate(users)}
-        self.item_id_to_index = {j: i for i, j in enumerate(items)}
-        self.index_to_item_id = {i: j for j, i in self.item_id_to_index.items()}
+        self.set_seen_items(self.get_seen_nodes(df_train))
+        self.fill_indices(df_train)
 
-        num_users = len(self.user_id_to_index)
-        num_items = len(self.item_id_to_index)
+        self.user_embeddings = nn.Embedding(self.num_users, self.embedding_dim).to(
+            self.device
+        )
+        self.item_embeddings = nn.Embedding(self.num_items, self.embedding_dim).to(
+            self.device
+        )
 
-        if (
-            self.user_embeddings_np is not None
-            and self.item_embeddings_np is not None
-            and self.user_embeddings_np.shape[0] == num_users
-            and self.item_embeddings_np.shape[0] == num_items
-        ):
-            self.user_embeddings = nn.Embedding(num_users, self.embedding_dim).to(self.device)
+        if self.user_embeddings_np is not None and self.item_embeddings_np is not None:
             self.user_embeddings.weight.data.copy_(
                 torch.from_numpy(self.user_embeddings_np).to(self.device)
             )
-            self.item_embeddings = nn.Embedding(num_items, self.embedding_dim).to(self.device)
             self.item_embeddings.weight.data.copy_(
                 torch.from_numpy(self.item_embeddings_np).to(self.device)
             )
         else:
-            self.user_embeddings = nn.Embedding(num_users, self.embedding_dim).to(
-                self.device
-            )
-            self.item_embeddings = nn.Embedding(num_items, self.embedding_dim).to(
-                self.device
-            )
             if self.device != torch.device("mps"):
                 nn.init.orthogonal_(self.user_embeddings.weight)
                 nn.init.orthogonal_(self.item_embeddings.weight)
@@ -105,37 +86,16 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         loss_fn = nn.BCEWithLogitsLoss(reduction="none")
         self.run.config.update({"loss_fn": "BCEWithLogits"})
 
-        user_indices = torch.tensor(
-            [self.user_id_to_index[u] for u in df_train["cookie"].to_list()],
-            dtype=torch.long,
-        )
-        item_indices = torch.tensor(
-            [self.item_id_to_index[i] for i in df_train["node"].to_list()],
-            dtype=torch.long,
-        )
-
-        weights = torch.tensor(
-            [10 if is_contact else 1 for is_contact in df_train["is_contact"].to_list()],
-            dtype=torch.long,
-        )
-
-        # record seen items per user for filtering during prediction
-        self.seen_items = {}
-        for u_idx, i_idx in zip(user_indices.tolist(), item_indices.tolist()):
-            self.seen_items.setdefault(u_idx, set()).add(i_idx)
-
-        if self.debug:
-            user_indices = user_indices[:10000]
-            item_indices = item_indices[:10000]
-
-        dataset = torch.utils.data.TensorDataset(user_indices, item_indices, weights)
+        dataset = self._get_dataset(df_train)
 
         for epoch in range(self.epochs):
             dataloader = torch.utils.data.DataLoader(
                 dataset, batch_size=self.batch_size, shuffle=True
             )
             total_loss = 0.0
-            for batch_users, batch_items, batch_weights in tqdm(dataloader, desc=f"Epoch {epoch}"):
+            for batch_users, batch_items, batch_weights in tqdm(
+                dataloader, desc=f"Epoch {epoch}"
+            ):
                 # with record_function("load_to_device"):
                 batch_users = batch_users.to(self.device)
                 batch_items = batch_items.to(self.device)
@@ -147,7 +107,9 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
                 # compute positive loss via dot product
                 pos_labels = torch.ones(len(batch_users), device=self.device)
                 pos_scores = (user_emb * pos_item_emb).sum(dim=1)
-                pos_loss = (loss_fn(pos_scores, pos_labels) * batch_weights.float()).mean()
+                pos_loss = (
+                    loss_fn(pos_scores, pos_labels) * batch_weights.float()
+                ).mean()
                 # pos_loss = loss_fn(pos_scores, pos_labels).mean()
 
                 # in-batch negatives: sample k negatives per positive
@@ -189,3 +151,27 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             self.item_embeddings.weight.detach().cpu().numpy(),
         )
 
+    def _get_dataset(self, df_train: pl.DataFrame) -> torch.utils.data.TensorDataset:
+        user_indices = torch.tensor(
+            [self.user_id_to_index[u] for u in df_train["cookie"].to_list()],
+            dtype=torch.long,
+        )
+        item_indices = torch.tensor(
+            [self.item_id_to_index[i] for i in df_train["node"].to_list()],
+            dtype=torch.long,
+        )
+
+        weights = torch.tensor(
+            [
+                10 if is_contact else 1
+                for is_contact in df_train["is_contact"].to_list()
+            ],
+            dtype=torch.long,
+        )
+
+        if self.debug:
+            user_indices = user_indices[:10000]
+            item_indices = item_indices[:10000]
+            weights = weights[:10000]
+
+        return torch.utils.data.TensorDataset(user_indices, item_indices, weights)
