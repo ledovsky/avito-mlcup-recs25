@@ -71,7 +71,12 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         num_users = len(self.user_id_to_index)
         num_items = len(self.item_id_to_index)
 
-        if self.user_embeddings_np is not None and self.item_embeddings_np is not None:
+        if (
+            self.user_embeddings_np is not None
+            and self.item_embeddings_np is not None
+            and self.user_embeddings_np.shape[0] == num_users
+            and self.item_embeddings_np.shape[0] == num_items
+        ):
             self.user_embeddings = nn.Embedding(num_users, self.embedding_dim).to(self.device)
             self.user_embeddings.weight.data.copy_(
                 torch.from_numpy(self.user_embeddings_np).to(self.device)
