@@ -244,4 +244,4 @@ class FaissPredict(BaseModel):
             how='anti'
         )
         # return only cookie and node_id columns
-        return negs.select(['cookie', pl.col('node').alias('node_id')])
+        return negs.select(['cookie', pl.col('node')])
