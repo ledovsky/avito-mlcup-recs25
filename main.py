@@ -325,12 +325,12 @@ def initialize_model(
         torchemb_config = {
             "embedding_dim": 64,
             "epochs": 3,
-            "batch_size": 1024,
+            "batch_size": 4096,
             "lr": 1e-3,
             "alpha": 0.01,
             "top_k_items": 40_000,
             "k_inbatch_negs": 200,
-            "dedupe": False,
+            "dedupe": True,
             # "debug": True,
         }
         run.config.update(torchemb_config)

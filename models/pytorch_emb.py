@@ -88,7 +88,8 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         self.run.config.update({"loss_fn": "BCEWithLogits"})
 
         dataset = self._get_dataset(df_train)
-        self._run_training_loop(dataset)
+        for epoch in range(self.epochs):
+            self._partial_train(dataset, epoch)
 
         self.set_embeddings(
             self.user_embeddings.weight.detach().cpu().numpy(),
@@ -123,60 +124,59 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
     def _forward(self, user_emb: torch.Tensor, item_emb: torch.Tensor) -> torch.Tensor:
         return (user_emb * item_emb).sum(dim=1)
 
-    def _run_training_loop(self, dataset: torch.utils.data.TensorDataset) -> None:
-        for epoch in range(self.epochs):
-            dataloader = torch.utils.data.DataLoader(
-                dataset, batch_size=self.batch_size, shuffle=True
+    def _partial_train(self, dataset: torch.utils.data.TensorDataset, epoch: int) -> None:
+        dataloader = torch.utils.data.DataLoader(
+            dataset, batch_size=self.batch_size, shuffle=True
+        )
+        total_loss = 0.0
+        for batch_users, batch_items, batch_weights in tqdm(
+            dataloader, desc=f"Epoch {epoch}"
+        ):
+            # with record_function("load_to_device"):
+            batch_users = batch_users.to(self.device)
+            batch_items = batch_items.to(self.device)
+            batch_weights = batch_weights.to(self.device)
+
+            user_emb = self.user_embeddings(batch_users)
+            pos_item_emb = self.item_embeddings(batch_items)
+
+            # compute positive loss via dot product
+            pos_labels = torch.ones(len(batch_users), device=self.device)
+            pos_scores = self._forward(user_emb, pos_item_emb)
+            pos_loss = (
+                self.loss_fn(pos_scores, pos_labels) * batch_weights.float()
+            ).mean()
+            # pos_loss = loss_fn(pos_scores, pos_labels).mean()
+
+            # in-batch negatives: sample k negatives per positive
+            k = min(self.k_inbatch_negs, len(batch_users) // 2)
+            B = len(batch_users)
+            # shape (B, B, D)
+            expanded_user_mat = user_emb.unsqueeze(1).expand(-1, B, -1)
+            expanded_item_mat = pos_item_emb.unsqueeze(0).expand(B, -1, -1)
+
+            # mask out positive pairs
+            mask = ~torch.eye(B, dtype=torch.bool, device=self.device)
+            neg_user_all = expanded_user_mat[mask].reshape(
+                B, B - 1, self.embedding_dim
             )
-            total_loss = 0.0
-            for batch_users, batch_items, batch_weights in tqdm(
-                dataloader, desc=f"Epoch {epoch}"
-            ):
-                # with record_function("load_to_device"):
-                batch_users = batch_users.to(self.device)
-                batch_items = batch_items.to(self.device)
-                batch_weights = batch_weights.to(self.device)
+            neg_item_all = expanded_item_mat[mask].reshape(
+                B, B - 1, self.embedding_dim
+            )
+            # sample k negatives per positive
+            idx = torch.randperm(B - 1, device=self.device)[:k]
+            sampled_user = neg_user_all[:, idx, :].reshape(-1, self.embedding_dim)
+            sampled_neg = neg_item_all[:, idx, :].reshape(-1, self.embedding_dim)
 
-                user_emb = self.user_embeddings(batch_users)
-                pos_item_emb = self.item_embeddings(batch_items)
+            neg_labels = torch.zeros(B * k, device=self.device)
+            neg_scores = self._forward(sampled_user, sampled_neg)
+            neg_loss = self.loss_fn(neg_scores, neg_labels).mean()
 
-                # compute positive loss via dot product
-                pos_labels = torch.ones(len(batch_users), device=self.device)
-                pos_scores = self._forward(user_emb, pos_item_emb)
-                pos_loss = (
-                    self.loss_fn(pos_scores, pos_labels) * batch_weights.float()
-                ).mean()
-                # pos_loss = loss_fn(pos_scores, pos_labels).mean()
+            loss = pos_loss + self.alpha * neg_loss
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-                # in-batch negatives: sample k negatives per positive
-                k = min(self.k_inbatch_negs, len(batch_users) // 2)
-                B = len(batch_users)
-                # shape (B, B, D)
-                expanded_user_mat = user_emb.unsqueeze(1).expand(-1, B, -1)
-                expanded_item_mat = pos_item_emb.unsqueeze(0).expand(B, -1, -1)
+            total_loss += loss.item()
 
-                # mask out positive pairs
-                mask = ~torch.eye(B, dtype=torch.bool, device=self.device)
-                neg_user_all = expanded_user_mat[mask].reshape(
-                    B, B - 1, self.embedding_dim
-                )
-                neg_item_all = expanded_item_mat[mask].reshape(
-                    B, B - 1, self.embedding_dim
-                )
-                # sample k negatives per positive
-                idx = torch.randperm(B - 1, device=self.device)[:k]
-                sampled_user = neg_user_all[:, idx, :].reshape(-1, self.embedding_dim)
-                sampled_neg = neg_item_all[:, idx, :].reshape(-1, self.embedding_dim)
-
-                neg_labels = torch.zeros(B * k, device=self.device)
-                neg_scores = self._forward(sampled_user, sampled_neg)
-                neg_loss = self.loss_fn(neg_scores, neg_labels).mean()
-
-                loss = pos_loss + self.alpha * neg_loss
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-
-                total_loss += loss.item()
-
-            self.run.log({"epoch": epoch, "loss": total_loss})
+        self.run.log({"epoch": epoch, "loss": total_loss})
