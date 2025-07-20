@@ -11,6 +11,8 @@ from tqdm import tqdm
 from .base import BaseTorchModel, FaissPredict
 
 
+
+
 class TorchEmbModel(FaissPredict, BaseTorchModel):
     def __init__(
         self,
@@ -24,8 +26,10 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         k_inbatch_negs: int = 10,
         debug: bool = False,
         dedupe: bool = False,
+        *args,
+        **kwargs
     ):
-        super().__init__()
+        super().__init__(*args, **kwargs)
         self.run = run
         self.embedding_dim = embedding_dim
         self.epochs = epochs
@@ -47,6 +51,7 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
         )
         print(f"TorchEmbModel using device {self.device}")
         self.set_is_cos_dist(False)
+        self.loss_fn = nn.BCEWithLogitsLoss(reduction="none")
 
     def fit(self, df_train: pl.DataFrame, df_events: pl.DataFrame) -> None:
         if self.top_k_items:
@@ -83,9 +88,6 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             + list(self.item_embeddings.parameters()),
             lr=self.lr,
         )
-        # loss_fn = nn.CosineEmbeddingLoss(reduction="mean")
-        self.loss_fn = nn.BCEWithLogitsLoss(reduction="none")
-        self.run.config.update({"loss_fn": "BCEWithLogits"})
 
         dataset = self._get_dataset(df_train)
         for epoch in range(self.epochs):
@@ -173,6 +175,119 @@ class TorchEmbModel(FaissPredict, BaseTorchModel):
             neg_loss = self.loss_fn(neg_scores, neg_labels).mean()
 
             loss = pos_loss + self.alpha * neg_loss
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+            total_loss += loss.item()
+
+        self.run.log({"epoch": epoch, "loss": total_loss})
+
+
+class TorchEmbHardNegs(TorchEmbModel):
+    """I expect that this model is called as a finetuning
+    It will use embeddings from the previsous stage and tune for hard negatives
+    """
+    def _get_dataset(self, df_train: pl.DataFrame) -> torch.utils.data.TensorDataset:
+
+        users = df_train["cookie"].unique().to_list()
+        hard_negs_df = self.get_hard_negs(df_train, users, 40)
+
+        hard_negs_df = hard_negs_df.with_columns(target=0, weight=self.alpha)
+        df_train = df_train.with_columns(target=1, weight=1)
+        df = pl.concat([df_train, hard_negs_df], how="vertical")
+
+        user_indices = torch.tensor(
+            [self.user_id_to_index[u] for u in df["cookie"].to_list()],
+            dtype=torch.long,
+        )
+        item_indices = torch.tensor(
+            [self.item_id_to_index[i] for i in df["node"].to_list()],
+            dtype=torch.long,
+        )
+        weight = torch.tensor(
+            df["weights"].to_list(),
+            dtype=torch.float32,
+        )
+        target = torch.tensor(
+            df["target"].to_list(),
+            dtype=torch.long,
+        )
+
+        return torch.utils.data.TensorDataset(user_indices, item_indices, weight, target)
+
+    def _partial_train(self, dataset: torch.utils.data.TensorDataset, epoch: int) -> None:
+        dataloader = torch.utils.data.DataLoader(
+            dataset, batch_size=self.batch_size, shuffle=True
+        )
+        total_loss = 0.0
+        for batch_users, batch_items, batch_weights, batch_targets in tqdm(
+            dataloader, desc=f"Epoch {epoch}"
+        ):
+            # with record_function("load_to_device"):
+            batch_users = batch_users.to(self.device)
+            batch_items = batch_items.to(self.device)
+            batch_weights = batch_weights.to(self.device)
+            batch_targets = batch_targets.to(self.device)
+
+            user_emb = self.user_embeddings(batch_users)
+            pos_item_emb = self.item_embeddings(batch_items)
+
+            # compute positive loss via dot product
+            scores = self._forward(user_emb, pos_item_emb)
+            loss = (
+                self.loss_fn(scores, batch_targets) * batch_weights
+            ).mean()
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+            total_loss += loss.item()
+
+        self.run.log({"epoch": epoch, "loss": total_loss})
+
+
+class TorchEmbCrossEnt(TorchEmbModel):
+    def __init__(self, *args, temperature: float = 1.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.temperature = temperature
+
+    @staticmethod
+    def in_batch_crossent_loss(user_emb, item_emb, temperature=1.0):
+        # Normalize if using cosine similarity
+        user_emb = F.normalize(user_emb, dim=-1)
+        item_emb = F.normalize(item_emb, dim=-1)
+
+        # Compute all dot products (N x N)
+        logits = user_emb @ item_emb.T  # shape: (N, N)
+        logits /= temperature
+
+        # Create labels (i-th user corresponds to i-th item)
+        labels = torch.arange(len(user_emb), device=user_emb.device)
+
+        # Compute cross-entropy loss
+        loss = F.cross_entropy(logits, labels)
+        return loss
+    
+    def _partial_train(self, dataset: torch.utils.data.TensorDataset, epoch: int) -> None:
+        dataloader = torch.utils.data.DataLoader(
+            dataset, batch_size=self.batch_size, shuffle=True
+        )
+        total_loss = 0.0
+        for batch_users, batch_items, batch_weights in tqdm(
+            dataloader, desc=f"Epoch {epoch}"
+        ):
+            # with record_function("load_to_device"):
+            batch_users = batch_users.to(self.device)
+            batch_items = batch_items.to(self.device)
+            batch_weights = batch_weights.to(self.device)
+
+            user_emb = self.user_embeddings(batch_users)
+            item_emb = self.item_embeddings(batch_items)
+
+            loss = self.in_batch_crossent_loss(user_emb, item_emb, self.temperature)
+
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
