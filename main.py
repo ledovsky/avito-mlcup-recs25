@@ -11,11 +11,11 @@ import wandb.wandb_run
 from models.base import BaseModel
 from models.implicit_model import ALSRecommender, ALS2
 from models.lightfm_model import LightFMRecommender
-from models.popular import Popular, PopularLocCat
+from models.popular import Popular
 from models.tfidf_model import TfidfRecommender
-from models.pytorch_emb import TorchEmbModel
+from models.pytorch_emb import TorchEmbModel, TorchEmbCrossEnt
 from ranker.ranker import Ranker
-from utils import TimeTracker, get_data, make_pred_df, recall_at
+from utils import TimeTracker, get_data, recall_at
 
 MODEL_PATH = "checkpoints"
 
@@ -36,7 +36,7 @@ def main():
         "--model",
         type=str,
         required=True,
-        choices=["als", "als-2", "tfidf", "lightfm", "popular-loc-cat", "popular", "torch-emb"],
+        choices=["als", "als-2", "tfidf", "lightfm", "popular-loc-cat", "popular", "torch-emb", "torch-emb-ce"],
         help="Which model to run",
     )
     train_candgen_parser.add_argument(
@@ -319,22 +319,37 @@ def initialize_model(
             "no_components": 64,
         }
         return LightFMRecommender(run, **lightfm_config)
-    elif model_name == "popular-loc-cat":
-        return PopularLocCat(df_cat)
     elif model_name == "torch-emb":
         torchemb_config = {
             "embedding_dim": 64,
-            "epochs": 3,
+            "epochs": 12,
             "batch_size": 4096,
             "lr": 1e-3,
             "alpha": 0.01,
             "top_k_items": 40_000,
             "k_inbatch_negs": 200,
             "dedupe": True,
-            # "debug": True,
+            "loss_fn": "BCEWithLogits"
         }
         run.config.update(torchemb_config)
         model = TorchEmbModel(run, **torchemb_config)
+        run.summary["device"] = str(model.device)
+        return model
+    elif model_name == "torch-emb-ce":
+        torchemb_config = {
+            "embedding_dim": 64,
+            "epochs": 12,
+            "batch_size": 4096,
+            "lr": 1e-3,
+            "alpha": 0.01,
+            "top_k_items": 40_000,
+            "k_inbatch_negs": 200,
+            "dedupe": True,
+            "temperature": 0.05,
+            "loss_fn": "InBatchCrossEnt",
+        }
+        run.config.update(torchemb_config)
+        model = TorchEmbCrossEnt(run, **torchemb_config)
         run.summary["device"] = str(model.device)
         return model
     elif model_name == "popular":
@@ -347,16 +362,16 @@ def fit_model(
     model: BaseModel, model_name: str, df_train: pl.DataFrame, df_events: pl.DataFrame
 ) -> None:
     """Fit a model based on the model name"""
-    if model_name in ["als", "als-2", "lightfm", "torch-emb"]:
-        model.fit(df_train, df_events)
+    if model_name == "popular":
+        model.fit(df_train)
+        return
     elif model_name in ["tfidf"]:
         model.fit(
             df_train["cookie"], df_train["node"], df_train["event"], df_train["week"]
         )
-    elif model_name in ["popular-loc-cat", "popular"]:
-        model.fit(df_train)
+        return
     else:
-        raise NotImplementedError(f"Model '{model_name}' is not implemented")
+        model.fit(df_train, df_events)
 
 
 def load_model(
@@ -372,10 +387,6 @@ def load_model(
     elif model_type == "lightfm":
         model = LightFMRecommender(df_events)
         # Assuming LightFMRecommender has a load method
-        return model.load(model_path)
-    elif model_type == "popular-loc-cat":
-        model = PopularLocCat(df_cat)
-        # Assuming PopularLocCat has a load method
         return model.load(model_path)
     elif model_type == "torch-emb":
         # Load TorchEmbModel with torch.load

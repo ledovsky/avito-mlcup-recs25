@@ -58,8 +58,6 @@ def test_torch_emb_ce():
     fit_model(model, "torch-emb-ce", df_train, df_events)
     eval_cookies = df_train["cookie"].to_list()
     model.predict(eval_cookies, N=40)
-    eval_cookies = df_train["cookie"].to_list()
-    model.predict(eval_cookies, N=40)
 
 
 def test_torch_emb_load_embeddings():

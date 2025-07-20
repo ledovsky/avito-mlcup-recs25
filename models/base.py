@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 
 class BaseModel:
-    def __init__(self) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         self.contact_weight: int = 1
         self.user_id_to_index: dict[str, int] = {}
         self.item_id_to_index: dict[int, int] = {}
