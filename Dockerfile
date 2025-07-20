@@ -43,5 +43,7 @@ RUN python3.11 -m pip install implicit==0.7.2
 
 RUN python3.11 -m pip install lightfm==1.17
 
+RUN git config --global --add safe.directory /app
+
 # COPY requirements_dev.txt .
 # RUN python3.12 -m pip install --no-cache-dir -r requirements_dev.txt
